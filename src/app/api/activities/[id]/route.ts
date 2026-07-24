@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
@@ -7,7 +7,8 @@ import { requireActivity } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { getActivityPhase } from "@/lib/domain/activity";
 import { calculateBordaResults } from "@/lib/domain/voting";
-import { apiError } from "@/lib/http";
+import { apiError, assertSameOrigin, HttpError, parseJson, rateLimit } from "@/lib/http";
+import { deleteActivitySchema } from "@/lib/validation";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -80,6 +81,32 @@ export async function GET(_request: Request, context: Context) {
       results,
       voterCount
     });
+  } catch (error) {
+    return apiError(error);
+  }
+}
+
+export async function DELETE(request: Request, context: Context) {
+  try {
+    assertSameOrigin(request);
+    rateLimit(request, "delete-activity", 6, 10 * 60_000);
+    const user = await requireUser();
+    const { id } = await context.params;
+    await parseJson(request, deleteActivitySchema);
+
+    const [deleted] = await getDb()
+      .delete(activities)
+      .where(and(eq(activities.id, id), eq(activities.managerUserId, user.id)))
+      .returning({ id: activities.id });
+    if (deleted) return NextResponse.json({ ok: true, deletedActivityId: deleted.id });
+
+    const [existing] = await getDb()
+      .select({ id: activities.id })
+      .from(activities)
+      .where(eq(activities.id, id))
+      .limit(1);
+    if (!existing) throw new HttpError(404, "活动不存在");
+    throw new HttpError(403, "只有这场活动的管理员可以删除它");
   } catch (error) {
     return apiError(error);
   }

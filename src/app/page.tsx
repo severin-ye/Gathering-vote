@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarPlus, KeyRound, LogOut, Trash2, UsersRound } from "lucide-react";
+import { CalendarPlus, KeyRound, LogOut, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -34,7 +34,6 @@ export default function HomePage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [activities, setActivities] = useState<ActivitySummary[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [showClear, setShowClear] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [createRequestId, setCreateRequestId] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
@@ -86,8 +85,6 @@ export default function HomePage() {
     router.replace("/login");
   }
 
-  const canClear = activities.some((activity) => activity.managerUserId === user?.id);
-
   return (
     <main className="shell">
       <header className="topbar">
@@ -109,7 +106,6 @@ export default function HomePage() {
           <p>每个人维护一份顺序。截止之后，答案自然浮上来。</p>
           <div className="toolbar">
             <button className="button stamp" onClick={openCreateDialog}><CalendarPlus size={19} /> 发起一场聚会</button>
-            {canClear && <button className="button danger" onClick={() => setShowClear(true)}><Trash2 size={18} /> 清空所有活动</button>}
           </div>
         </div>
       </section>
@@ -148,7 +144,6 @@ export default function HomePage() {
           </form>
         </div>
       )}
-      {showClear && user && <ClearDialog username={user.username} onClose={() => setShowClear(false)} onCleared={load} />}
       {showPassword && user && (
         <PasswordDialog
           hasPassword={user.hasPassword}
@@ -222,35 +217,4 @@ function todayForInput() {
 function formatEventDate(value: string) {
   const [year, month, day] = value.split("-").map(Number);
   return `${year}年${month}月${day}日`;
-}
-
-function ClearDialog({ username, onClose, onCleared }: { username: string; onClose: () => void; onCleared: () => Promise<void> }) {
-  const [error, setError] = useState("");
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    try {
-      await api("/api/activities/clear", {
-        method: "POST",
-        body: JSON.stringify({ username: form.get("username"), confirmation: form.get("confirmation") })
-      });
-      onClose();
-      await onCleared();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "清空失败");
-    }
-  }
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="clear-title">
-      <form className="paper modal form-grid" onSubmit={submit}>
-        <span className="eyebrow">危险操作</span>
-        <h2 id="clear-title">清空所有活动</h2>
-        <div className="notice">这会永久删除全部活动、候选和选票。用户账号、密码和登录状态会保留。</div>
-        <label>输入当前用户名<input name="username" placeholder={username} required /></label>
-        <label>输入“清空所有活动”<input name="confirmation" required /></label>
-        {error && <p className="error" role="alert">{error}</p>}
-        <div className="toolbar"><button className="button danger">确认清空</button><button type="button" className="button" onClick={onClose}>取消</button></div>
-      </form>
-    </div>
-  );
 }

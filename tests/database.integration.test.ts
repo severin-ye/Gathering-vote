@@ -60,15 +60,29 @@ describe("PostgreSQL constraints and transactions", () => {
     ).rejects.toThrow();
   });
 
-  it("cascades activity data while preserving accounts and sessions", async () => {
+  it("only lets the manager delete one activity and cascades its data", async () => {
     await db.exec(`
       insert into sessions (user_id, token_hash, expires_at) values ('${USER_A}', 'token', now() + interval '1 day');
+      update activities set manager_user_id = '${USER_A}' where id = '${ACTIVITY}';
+      insert into activities (id, title, created_by_id, manager_user_id)
+        values ('10000000-0000-4000-8000-000000000002', '保留的活动', '${USER_B}', '${USER_B}');
       insert into candidates (activity_id, name, name_key, created_by_id) values ('${ACTIVITY}', '火锅', '火锅', '${USER_A}');
       insert into ballots (activity_id, user_id) values ('${ACTIVITY}', '${USER_A}');
       insert into ballot_items (ballot_id, candidate_id, position)
         select ballots.id, candidates.id, 0 from ballots, candidates where ballots.activity_id = '${ACTIVITY}' and candidates.activity_id = '${ACTIVITY}';
-      delete from activities;
     `);
+    const denied = await db.query(
+      `delete from activities where id = $1 and manager_user_id = $2 returning id`,
+      [ACTIVITY, USER_B]
+    );
+    expect(denied.rows).toHaveLength(0);
+
+    const deleted = await db.query(
+      `delete from activities where id = $1 and manager_user_id = $2 returning id`,
+      [ACTIVITY, USER_A]
+    );
+    expect(deleted.rows).toHaveLength(1);
+
     const counts = await db.query<{ users: number; sessions: number; activities: number; candidates: number; ballots: number }>(
       `select
         (select count(*)::int from users) users,
@@ -77,6 +91,6 @@ describe("PostgreSQL constraints and transactions", () => {
         (select count(*)::int from candidates) candidates,
         (select count(*)::int from ballots) ballots`
     );
-    expect(counts.rows[0]).toEqual({ users: 2, sessions: 1, activities: 0, candidates: 0, ballots: 0 });
+    expect(counts.rows[0]).toEqual({ users: 2, sessions: 1, activities: 1, candidates: 0, ballots: 0 });
   });
 });

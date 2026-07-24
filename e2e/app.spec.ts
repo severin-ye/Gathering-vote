@@ -227,19 +227,49 @@ test("新建活动名称可留空，并随请求发送日期和幂等键", async
   expect(submitted.clientRequestId).toMatch(/^[0-9a-f-]{36}$/);
 });
 
-test("活动管理员能看到双重确认的全站清空入口", async ({ page }) => {
+test("只有活动管理员能确认删除当前活动", async ({ page }) => {
+  let deleted = false;
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
-  await page.route("**/api/activities", (route) => route.fulfill({
+  await page.route(`**/api/activities/${activityId}`, (route) => {
+    if (route.request().method() === "DELETE") {
+      deleted = true;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({
+      json: {
+        activity: {
+          id: activityId, title: "周六吃什么", description: "", eventDate: "2026-08-06",
+          managerUserId: user.id, managerUsername: user.username, nominationEndsAt: null,
+          votingEndsAt: null, phase: "setup", updatedAt: "2026-07-24T10:00:00Z"
+        },
+        candidates: [], ownBallot: [], results: null, voterCount: 0
+      }
+    });
+  });
+
+  await page.goto(`/activities/${activityId}`);
+  await page.getByRole("button", { name: "删除这个活动" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("只删除这一场活动");
+  await dialog.getByLabel("输入“删除这个活动”").fill("删除这个活动");
+  await dialog.getByRole("button", { name: "确认删除" }).click();
+  await expect(page).toHaveURL("/");
+  expect(deleted).toBe(true);
+});
+
+test("非管理员看不到删除活动入口", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
     json: {
-      activities: [{
-        id: activityId, title: "周六吃什么", description: "", managerUserId: user.id,
-        managerUsername: user.username, eventDate: "2026-08-06", nominationEndsAt: null, votingEndsAt: null, candidateCount: 0
-      }]
+      activity: {
+        id: activityId, title: "周六吃什么", description: "", eventDate: "2026-08-06",
+        managerUserId: "00000000-0000-4000-8000-000000000099", managerUsername: "朋友甲",
+        nominationEndsAt: null, votingEndsAt: null, phase: "setup", updatedAt: "2026-07-24T10:00:00Z"
+      },
+      candidates: [], ownBallot: [], results: null, voterCount: 0
     }
   }));
-  await page.goto("/");
-  await page.getByRole("button", { name: /清空所有活动/ }).click();
-  await expect(page.getByRole("dialog")).toContainText("用户账号、密码和登录状态会保留");
-  await expect(page.getByLabel("输入当前用户名")).toBeVisible();
-  await expect(page.getByLabel("输入“清空所有活动”")).toBeVisible();
+
+  await page.goto(`/activities/${activityId}`);
+  await expect(page.getByRole("button", { name: "删除这个活动" })).toHaveCount(0);
 });

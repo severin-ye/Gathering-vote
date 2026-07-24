@@ -42,6 +42,7 @@ export default function ActivityPage() {
   const [data, setData] = useState<ActivityDetail | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Candidate | null>(null);
+  const [showDelete, setShowDelete] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -103,6 +104,7 @@ export default function ActivityPage() {
           <div className="toolbar">
             {activity.managerUsername ? <span className="badge"><Crown size={15} /> 管理员：{activity.managerUsername}</span> : <button className="button stamp" onClick={() => mutate(`/api/activities/${id}/manager`, "POST")}><Crown size={17} /> 申领管理员</button>}
             {isManager && <button className="button danger small" onClick={() => mutate(`/api/activities/${id}/manager`, "DELETE")}><UserMinus size={16} /> 解除管理</button>}
+            {isManager && <button className="button danger small" onClick={() => setShowDelete(true)}><Trash2 size={16} /> 删除这个活动</button>}
           </div>
           {!user.hasPassword && isManager && <div className="notice">你的账号没有密码。任何知道“{user.username}”的人都能以管理员身份登录。</div>}
         </div>
@@ -168,7 +170,57 @@ export default function ActivityPage() {
       {activity.phase === "nomination" && <section className="paper panel notice"><strong>候选仍在征集中。</strong>你可以随时保存当前排序；新候选会自动追加到末尾。</section>}
       {activity.phase === "setup" && <section className="paper panel notice"><strong>等待管理员设置时间。</strong>候选和个人排序现在都可以维护。</section>}
       {activity.phase === "closed" && <Results data={data} candidates={candidates} />}
+      {showDelete && (
+        <DeleteActivityDialog
+          title={activity.title}
+          onClose={() => setShowDelete(false)}
+          onDeleted={() => router.push("/")}
+          activityId={id}
+        />
+      )}
     </main>
+  );
+}
+
+function DeleteActivityDialog({
+  title,
+  activityId,
+  onClose,
+  onDeleted
+}: {
+  title: string;
+  activityId: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [error, setError] = useState("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      await api(`/api/activities/${activityId}`, {
+        method: "DELETE",
+        body: JSON.stringify({ confirmation: form.get("confirmation") })
+      });
+      onDeleted();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "删除失败");
+    }
+  }
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-activity-title">
+      <form className="paper modal form-grid" onSubmit={submit}>
+        <span className="eyebrow">管理员操作 · 不可撤销</span>
+        <h2 id="delete-activity-title">删除“{title}”</h2>
+        <div className="notice">只删除这一场活动，以及它的候选和选票。其他活动、用户账号、密码和登录状态都会保留。</div>
+        <label>输入“删除这个活动”<input name="confirmation" autoFocus required /></label>
+        {error && <p className="error" role="alert">{error}</p>}
+        <div className="toolbar">
+          <button className="button danger">确认删除</button>
+          <button type="button" className="button" onClick={onClose}>取消</button>
+        </div>
+      </form>
+    </div>
   );
 }
 

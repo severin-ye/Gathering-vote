@@ -3,8 +3,8 @@ import {
   activityDeadlinesSchema,
   activitySchema,
   ballotSchema,
-  clearActivitiesSchema,
   credentialsSchema,
+  deleteActivitySchema,
   passwordChangeSchema,
   registrationCredentialsSchema
 } from "@/lib/validation";
@@ -69,18 +69,12 @@ describe("request validation", () => {
     expect(ballotSchema.safeParse({ candidateIds: ["a", "a"] }).success).toBe(false);
   });
 
-  it("requires both destructive confirmation values", () => {
+  it("requires the exact single-activity deletion confirmation", () => {
     expect(
-      clearActivitiesSchema.safeParse({
-        username: "王狗蛋",
-        confirmation: "清空所有活动"
-      }).success
+      deleteActivitySchema.safeParse({ confirmation: "删除这个活动" }).success
     ).toBe(true);
     expect(
-      clearActivitiesSchema.safeParse({
-        username: "王狗蛋",
-        confirmation: "清空活动"
-      }).success
+      deleteActivitySchema.safeParse({ confirmation: "删除活动" }).success
     ).toBe(false);
   });
 });

@@ -54,7 +54,6 @@ export const ballotSchema = z
     path: ["candidateIds"]
   });
 
-export const clearActivitiesSchema = z.object({
-  username: text("用户名", 40),
-  confirmation: z.literal("清空所有活动")
+export const deleteActivitySchema = z.object({
+  confirmation: z.literal("删除这个活动")
 });
