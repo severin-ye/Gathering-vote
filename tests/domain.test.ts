@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getActivityPhase } from "@/lib/domain/activity";
+import { getActivityPhase, getDeadlineWarnings } from "@/lib/domain/activity";
 import { calculateBordaResults, mergeRankingOrder, validateRanking } from "@/lib/domain/voting";
 import { normalizeName } from "@/lib/domain/normalization";
 
@@ -21,6 +21,29 @@ describe("activity phases", () => {
     const votingEnd = new Date("2026-07-25T12:00:00.000Z");
     expect(getActivityPhase(nominationEnd, votingEnd, now)).toBe("voting");
     expect(getActivityPhase(nominationEnd, votingEnd, votingEnd)).toBe("closed");
+  });
+});
+
+describe("deadline recommendations", () => {
+  it("compares the voting deadline by calendar date rather than 24 hours", () => {
+    expect(
+      getDeadlineWarnings("2026-08-06", "2026-08-05T18:00", "2026-08-05T23:59")
+    ).toEqual([
+      expect.objectContaining({ code: "nomination-gap-short" })
+    ]);
+  });
+
+  it("warns when voting is not a day earlier or nomination has less than six hours", () => {
+    expect(
+      getDeadlineWarnings("2026-08-06", "2026-08-05T21:00", "2026-08-06T01:00")
+        .map((warning) => warning.code)
+    ).toEqual(["voting-close-to-event", "nomination-gap-short"]);
+  });
+
+  it("does not warn when both recommendations are met", () => {
+    expect(
+      getDeadlineWarnings("2026-08-06", "2026-08-04T18:00", "2026-08-05T18:00")
+    ).toEqual([]);
   });
 });
 

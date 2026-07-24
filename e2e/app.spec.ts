@@ -88,11 +88,50 @@ test("用户可以进入活动、用按钮排序并保存唯一选票", async ({
   await page.goto("/");
   await page.getByRole("link", { name: /周六吃什么/ }).click();
   await expect(page.getByRole("heading", { name: /拖拽我的排序/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "拖动 火锅" })).toBeVisible();
+  const dragHandle = page.getByRole("button", { name: "拖动 火锅" });
+  await expect(dragHandle).toBeVisible();
+  await expect(page.locator(".sortable").first()).toHaveCSS("touch-action", "pan-y");
+  await expect(dragHandle).toHaveCSS("touch-action", "none");
   await page.getByRole("button", { name: "火锅 下移" }).click();
   await page.getByRole("button", { name: /保存我的排序/ }).click();
   await expect(page.getByText("已保存这份排序 ✓")).toBeVisible();
   expect(savedOrder).toEqual([candidates[1].id, candidates[0].id]);
+});
+
+test("时间建议只提示，管理员仍可确认保存", async ({ page }) => {
+  let savedDeadlines: { nominationEndsAt: string; votingEndsAt: string } | null = null;
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
+    json: {
+      activity: {
+        id: activityId, title: "周六吃什么", description: "", eventDate: "2026-08-06",
+        managerUserId: user.id, managerUsername: user.username, nominationEndsAt: null,
+        votingEndsAt: null, phase: "setup", updatedAt: "2026-07-24T10:00:00Z"
+      },
+      candidates: [], ownBallot: [], results: null, voterCount: 0
+    }
+  }));
+  await page.route(`**/api/activities/${activityId}/deadlines`, async (route) => {
+    savedDeadlines = await route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto(`/activities/${activityId}`);
+  await page.getByLabel("候选截止").fill("2026-08-05T21:00");
+  await page.getByLabel("排序截止").fill("2026-08-06T01:00");
+  await page.getByRole("button", { name: "保存时间" }).click();
+
+  let dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("排序截止日期最好至少比活动日期早一天");
+  await expect(dialog).toContainText("至少比排序截止时间早 6 小时");
+  await dialog.getByRole("button", { name: "再想想" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(savedDeadlines).toBeNull();
+
+  await page.getByRole("button", { name: "保存时间" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "确定保存" }).click();
+  await expect.poll(() => savedDeadlines).not.toBeNull();
 });
 
 test("添加候选成功后安全清空表单，不触发 reset 空引用", async ({ page }) => {

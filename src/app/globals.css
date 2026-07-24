@@ -110,9 +110,9 @@ textarea { min-height: 90px; resize: vertical; }
 }
 .candidate-copy { flex: 1; min-width: 0; }
 .candidate-copy h3 { margin: 0 0 4px; }
-.sortable { touch-action: none; cursor: grab; background: rgba(255,255,255,.22); padding-inline: 12px; margin-bottom: 8px; border: 1px solid transparent; }
+.sortable { touch-action: pan-y; background: rgba(255,255,255,.22); padding-inline: 12px; margin-bottom: 8px; border: 1px solid transparent; }
 .sortable.is-dragging { opacity: .65; border-color: var(--stamp); box-shadow: var(--shadow); }
-.drag-handle { color: var(--muted); display: inline-flex; place-items: center; min-width: 72px; border-style: dashed; }
+.drag-handle { color: var(--muted); display: inline-flex; place-items: center; min-width: 72px; border-style: dashed; touch-action: none; cursor: grab; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; background: rgba(22,24,20,.68); display: grid; place-items: center; padding: 18px; }
 .modal { width: min(520px, 100%); padding: 28px; }
 .auth-shell { min-height: 100vh; display: grid; place-items: center; padding: 20px; position: relative; z-index: 11; }

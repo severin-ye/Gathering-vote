@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { RankingBoard } from "@/components/ranking-board";
 import { api, type CurrentUser } from "@/lib/client-api";
-import { phaseLabels, type ActivityPhase } from "@/lib/domain/activity";
+import { getDeadlineWarnings, phaseLabels, type ActivityPhase, type DeadlineWarning } from "@/lib/domain/activity";
 
 interface Candidate {
   id: string;
@@ -225,20 +225,58 @@ function DeleteActivityDialog({
 }
 
 function DeadlineForm({ activity, onSave }: { activity: ActivityDetail["activity"]; onSave: (body: object) => Promise<void> }) {
+  const [warnings, setWarnings] = useState<DeadlineWarning[]>([]);
+  const [pending, setPending] = useState<{ nominationEndsAt: string; votingEndsAt: string } | null>(null);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    await onSave({
-      nominationEndsAt: new Date(String(form.get("nominationEndsAt"))).toISOString(),
-      votingEndsAt: new Date(String(form.get("votingEndsAt"))).toISOString()
-    });
+    const nominationLocal = String(form.get("nominationEndsAt"));
+    const votingLocal = String(form.get("votingEndsAt"));
+    const body = {
+      nominationEndsAt: new Date(nominationLocal).toISOString(),
+      votingEndsAt: new Date(votingLocal).toISOString()
+    };
+    const nextWarnings = getDeadlineWarnings(activity.eventDate, nominationLocal, votingLocal);
+    if (nextWarnings.length) {
+      setWarnings(nextWarnings);
+      setPending(body);
+      return;
+    }
+    await onSave(body);
   }
+
+  async function confirmWarnings() {
+    if (!pending) return;
+    await onSave(pending);
+    setWarnings([]);
+    setPending(null);
+  }
+
   return (
-    <form className="form-grid" onSubmit={submit}>
-      <label>候选截止<input type="datetime-local" name="nominationEndsAt" defaultValue={toLocalInput(activity.nominationEndsAt)} required /></label>
-      <label>排序截止<input type="datetime-local" name="votingEndsAt" defaultValue={toLocalInput(activity.votingEndsAt)} required /></label>
-      <button className="button primary">保存时间</button>
-    </form>
+    <>
+      <form className="form-grid" onSubmit={submit}>
+        <label>候选截止<input type="datetime-local" name="nominationEndsAt" defaultValue={toLocalInput(activity.nominationEndsAt)} required /></label>
+        <label>排序截止<input type="datetime-local" name="votingEndsAt" defaultValue={toLocalInput(activity.votingEndsAt)} required /></label>
+        <button className="button primary">保存时间</button>
+      </form>
+      {!!warnings.length && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="deadline-warning-title">
+          <div className="paper modal form-grid">
+            <span className="eyebrow">时间安排提醒</span>
+            <h2 id="deadline-warning-title">这个时间安排有点紧</h2>
+            <div className="notice">
+              {warnings.map((warning) => <p key={warning.code}>{warning.message}</p>)}
+              <small className="muted">这些是建议，不是强制要求。你仍然可以保存当前设置。</small>
+            </div>
+            <div className="toolbar">
+              <button type="button" className="button stamp" onClick={confirmWarnings}>确定保存</button>
+              <button type="button" className="button" onClick={() => { setWarnings([]); setPending(null); }}>再想想</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
