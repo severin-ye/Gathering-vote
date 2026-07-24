@@ -1,0 +1,245 @@
+import { expect, test } from "@playwright/test";
+
+const user = { id: "00000000-0000-4000-8000-000000000001", username: "王狗蛋", hasPassword: false };
+const activityId = "10000000-0000-4000-8000-000000000001";
+const candidates = [
+  { id: "20000000-0000-4000-8000-000000000001", name: "火锅", description: "暖和", createdById: user.id, createdByUsername: user.username, createdAt: "2026-07-24T10:00:00Z" },
+  { id: "20000000-0000-4000-8000-000000000002", name: "桌游", description: "轻松", createdById: user.id, createdByUsername: user.username, createdAt: "2026-07-24T10:01:00Z" }
+];
+
+test("登录页在手机宽度可完整操作且明确提示无密码风险", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null } }));
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: /今晚/ })).toBeVisible();
+  await expect(page.getByText(/无密码账号可以被任何知道你真名的人登录/)).toBeVisible();
+  await expect(page.locator("body")).toHaveScreenshot("login-mobile.png", { animations: "disabled" });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+});
+
+test("注册成功后回到登录状态而不是自动进入活动页", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user: null } }));
+  let registered = false;
+  await page.route("**/api/auth/register", async (route) => {
+    const body = await route.request().postDataJSON();
+    expect(body).toEqual({ username: "王狗蛋", password: "" });
+    registered = true;
+    await route.fulfill({
+      status: 201,
+      json: { user: { ...user, hasPassword: false }, message: "注册成功，请登录" }
+    });
+  });
+  await page.goto("/login");
+  await page.getByRole("button", { name: /创建账号/ }).click();
+  await page.getByLabel("用户名").fill("王狗蛋");
+  await page.getByRole("button", { name: "创建账号" }).click();
+  await expect(page.getByText("注册成功，请使用刚才的用户名登录。")).toBeVisible();
+  await expect(page.getByRole("button", { name: /登录并入席/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+  expect(registered).toBe(true);
+});
+
+test("用户可以进入活动、用按钮排序并保存唯一选票", async ({ page }) => {
+  let savedOrder: string[] = [];
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route("**/api/activities", (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    return route.fulfill({
+      json: {
+        activities: [{
+          id: activityId,
+          title: "周六吃什么",
+          description: "预算 100 元",
+          eventDate: "2026-08-06",
+          managerUserId: user.id,
+          managerUsername: user.username,
+          nominationEndsAt: "2026-07-24T10:00:00Z",
+          votingEndsAt: "2099-07-25T10:00:00Z",
+          candidateCount: 2
+        }]
+      }
+    });
+  });
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
+    json: {
+      activity: {
+        id: activityId,
+        title: "周六吃什么",
+        description: "预算 100 元",
+        eventDate: "2026-08-06",
+        managerUserId: user.id,
+        managerUsername: user.username,
+        nominationEndsAt: "2026-07-24T10:00:00Z",
+        votingEndsAt: "2099-07-25T10:00:00Z",
+        phase: "voting",
+        updatedAt: "2026-07-24T10:00:00Z"
+      },
+      candidates,
+      ownBallot: [],
+      results: null,
+      voterCount: 0
+    }
+  }));
+  await page.route(`**/api/activities/${activityId}/ballot`, async (route) => {
+    savedOrder = (await route.request().postDataJSON()).candidateIds;
+    await route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /周六吃什么/ }).click();
+  await expect(page.getByRole("heading", { name: /拖拽我的排序/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "拖动 火锅" })).toBeVisible();
+  await page.getByRole("button", { name: "火锅 下移" }).click();
+  await page.getByRole("button", { name: /保存我的排序/ }).click();
+  await expect(page.getByText("已保存这份排序 ✓")).toBeVisible();
+  expect(savedOrder).toEqual([candidates[1].id, candidates[0].id]);
+});
+
+test("添加候选成功后安全清空表单，不触发 reset 空引用", async ({ page }) => {
+  let saved = false;
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
+    json: {
+      activity: {
+        id: activityId,
+        title: "2026年8月6日",
+        description: "",
+        eventDate: "2026-08-06",
+        managerUserId: user.id,
+        managerUsername: user.username,
+        nominationEndsAt: "2099-07-24T10:00:00Z",
+        votingEndsAt: "2099-07-25T10:00:00Z",
+        phase: "nomination",
+        updatedAt: "2026-07-24T10:00:00Z"
+      },
+      candidates: saved ? [{
+        id: candidates[0].id,
+        name: "看电影",
+        description: "",
+        createdById: user.id,
+        createdByUsername: user.username,
+        createdAt: "2026-07-24T10:00:00Z"
+      }] : [],
+      ownBallot: [],
+      results: null,
+      voterCount: 0
+    }
+  }));
+  await page.route(`**/api/activities/${activityId}/candidates`, async (route) => {
+    saved = true;
+    await route.fulfill({ status: 201, json: { candidate: { id: candidates[0].id } } });
+  });
+  await page.goto(`/activities/${activityId}`);
+  const nameInput = page.getByLabel("候选名称");
+  await nameInput.fill("看电影");
+  await page.getByRole("button", { name: "加入清单" }).click();
+  await expect(nameInput).toHaveValue("");
+  await expect(page.getByText("看电影", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "拖动 看电影" })).toBeVisible();
+});
+
+test("截止后的第一名显示皇冠并重点加粗", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
+    json: {
+      activity: {
+        id: activityId,
+        title: "周六吃什么",
+        description: "",
+        eventDate: "2026-08-06",
+        managerUserId: user.id,
+        managerUsername: user.username,
+        nominationEndsAt: "2026-07-24T10:00:00Z",
+        votingEndsAt: "2026-07-25T10:00:00Z",
+        phase: "closed",
+        updatedAt: "2026-07-25T10:00:00Z"
+      },
+      candidates,
+      ownBallot: candidates.map((candidate) => candidate.id),
+      results: [
+        { candidateId: candidates[0].id, score: 2, rankCounts: [2, 0] },
+        { candidateId: candidates[1].id, score: 0, rankCounts: [0, 2] }
+      ],
+      voterCount: 2
+    }
+  }));
+
+  await page.goto(`/activities/${activityId}`);
+  const winner = page.locator(".result-row.winner");
+  await expect(winner).toContainText("火锅");
+  await expect(winner.getByLabel("冠军")).toBeVisible();
+  await expect(winner.locator(".winner-name")).toHaveCSS("font-weight", "900");
+});
+
+test("无密码用户可设置密码，之后入口切换为修改密码", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route("**/api/activities", (route) => route.fulfill({ json: { activities: [] } }));
+  let passwordBody: Record<string, string> | null = null;
+  await page.route("**/api/auth/password", async (route) => {
+    passwordBody = await route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true, hasPassword: true } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置密码" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("设置后，其他人不能再只凭你的用户名登录。")).toBeVisible();
+  await expect(dialog.getByLabel("原密码")).toHaveCount(0);
+  await dialog.getByLabel("新密码", { exact: true }).fill("new-pass");
+  await dialog.getByLabel("再次输入新密码").fill("new-pass");
+  await dialog.getByRole("button", { name: "设置密码", exact: true }).click();
+  expect(passwordBody).toEqual({
+    currentPassword: "",
+    newPassword: "new-pass",
+    confirmPassword: "new-pass"
+  });
+  await expect(page.getByRole("button", { name: "修改密码" })).toBeVisible();
+  await page.getByRole("button", { name: "修改密码" }).click();
+  await expect(page.getByRole("dialog").getByLabel("原密码")).toBeVisible();
+});
+
+test("新建活动名称可留空，并随请求发送日期和幂等键", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  let requestBody: Record<string, string> | null = null;
+  await page.route("**/api/activities", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({ json: { activities: [] } });
+    }
+    requestBody = await route.request().postDataJSON();
+    return route.fulfill({
+      status: 201,
+      json: {
+        activity: {
+          id: activityId,
+          title: "2026年8月6日",
+          eventDate: "2026-08-06"
+        }
+      }
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "发起一场聚会" }).click();
+  await page.getByLabel("聚会日期").fill("2026-08-06");
+  await page.getByRole("button", { name: "创建选票" }).click();
+  await expect(page).toHaveURL(new RegExp(`/activities/${activityId}$`));
+  const submitted = requestBody as unknown as Record<string, string>;
+  expect(submitted.title).toBe("");
+  expect(submitted.eventDate).toBe("2026-08-06");
+  expect(submitted.clientRequestId).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test("活动管理员能看到双重确认的全站清空入口", async ({ page }) => {
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route("**/api/activities", (route) => route.fulfill({
+    json: {
+      activities: [{
+        id: activityId, title: "周六吃什么", description: "", managerUserId: user.id,
+        managerUsername: user.username, eventDate: "2026-08-06", nominationEndsAt: null, votingEndsAt: null, candidateCount: 0
+      }]
+    }
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: /清空所有活动/ }).click();
+  await expect(page.getByRole("dialog")).toContainText("用户账号、密码和登录状态会保留");
+  await expect(page.getByLabel("输入当前用户名")).toBeVisible();
+  await expect(page.getByLabel("输入“清空所有活动”")).toBeVisible();
+});
