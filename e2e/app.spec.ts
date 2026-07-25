@@ -117,12 +117,13 @@ test("参加后才能添加候选和排序，并区分已排序与未排序人�
     username: "朋友甲"
   };
   let joined = false;
+  let friendNote = "桌游高手";
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
   await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
     json: {
       activity: {
         id: activityId, title: "周六吃什么", description: "", eventDate: "2026-08-06",
-        managerUserId: friend.id, managerUsername: friend.username,
+        managerUserId: friend.id, managerUsername: friend.username, managerDisplayName: `${friendNote}（${friend.username}）`,
         nominationEndsAt: "2099-07-24T10:00:00Z", votingEndsAt: "2099-07-25T10:00:00Z",
         phase: "nomination", updatedAt: "2026-07-24T10:00:00Z"
       },
@@ -132,7 +133,7 @@ test("参加后才能添加候选和排序，并区分已排序与未排序人�
       voterCount: 1,
       isParticipant: joined,
       participants: [
-        { userId: friend.id, username: friend.username, hasBallot: true },
+        { userId: friend.id, username: friend.username, displayName: `${friendNote}（${friend.username}）`, note: friendNote, hasBallot: true },
         ...(joined ? [{ userId: user.id, username: user.username, hasBallot: false }] : [])
       ]
     }
@@ -141,10 +142,15 @@ test("参加后才能添加候选和排序，并区分已排序与未排序人�
     joined = true;
     await route.fulfill({ status: 201, json: { ok: true } });
   });
+  await page.route(`**/api/users/${friend.id}/note`, async (route) => {
+    friendNote = (await route.request().postDataJSON()).note;
+    await route.fulfill({ json: { ok: true, note: friendNote } });
+  });
 
   await page.goto(`/activities/${activityId}`);
   const roster = page.getByRole("region", { name: "参加与排序状态" });
-  await expect(roster.getByText(friend.username)).toBeVisible();
+  await expect(roster.getByText(`桌游高手（${friend.username}）`)).toBeVisible();
+  await expect(page.locator(".hero")).toContainText(`桌游高手（${friend.username}）`);
   await expect(roster.getByText("已排序", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "添加候选项" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "保存我的排序" })).toHaveCount(0);
@@ -157,6 +163,12 @@ test("参加后才能添加候选和排序，并区分已排序与未排序人�
   await expect(roster.getByText("未排序", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "添加候选项" })).toBeVisible();
   await expect(page.getByRole("button", { name: "保存我的排序" })).toBeVisible();
+  await page.getByRole("button", { name: `备注 ${friend.username}` }).click();
+  const noteDialog = page.getByRole("dialog");
+  await noteDialog.getByLabel("我的备注").fill("老甲");
+  await noteDialog.getByRole("button", { name: "保存备注" }).click();
+  await expect(roster.getByText(`老甲（${friend.username}）`)).toBeVisible();
+  await expect(page.locator(".hero")).toContainText(`老甲（${friend.username}）`);
 });
 
 test("时间建议只提示，管理员仍可确认保存", async ({ page }) => {
@@ -276,29 +288,31 @@ test("截止后的第一名显示皇冠并重点加粗", async ({ page }) => {
   await expect(winner.locator(".winner-name")).toHaveCSS("font-weight", "900");
 });
 
-test("无密码用户可设置密码，之后入口切换为修改密码", async ({ page }) => {
+test("账号管理可以修改用户名并为无密码用户设置密码", async ({ page }) => {
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
   await page.route("**/api/activities", (route) => route.fulfill({ json: { activities: [] } }));
   let passwordBody: Record<string, string> | null = null;
-  await page.route("**/api/auth/password", async (route) => {
+  await page.route("**/api/auth/account", async (route) => {
     passwordBody = await route.request().postDataJSON();
-    await route.fulfill({ json: { ok: true, hasPassword: true } });
+    await route.fulfill({ json: { user: { ...user, username: "王小蛋", hasPassword: true } } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "设置密码" }).click();
+  await page.getByRole("button", { name: "账号管理" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("设置后，其他人不能再只凭你的用户名登录。")).toBeVisible();
+  await expect(dialog.getByText("设置密码后，其他人不能再只凭你的用户名登录。")).toBeVisible();
   await expect(dialog.getByLabel("原密码")).toHaveCount(0);
+  await dialog.getByLabel("用户名").fill("王小蛋");
   await dialog.getByLabel("新密码", { exact: true }).fill("new-pass");
   await dialog.getByLabel("再次输入新密码").fill("new-pass");
-  await dialog.getByRole("button", { name: "设置密码", exact: true }).click();
+  await dialog.getByRole("button", { name: "保存账号设置", exact: true }).click();
   expect(passwordBody).toEqual({
+    username: "王小蛋",
     currentPassword: "",
     newPassword: "new-pass",
     confirmPassword: "new-pass"
   });
-  await expect(page.getByRole("button", { name: "修改密码" })).toBeVisible();
-  await page.getByRole("button", { name: "修改密码" }).click();
+  await page.getByRole("button", { name: "账号管理" }).click();
+  await expect(page.getByRole("dialog").getByLabel("用户名")).toHaveValue("王小蛋");
   await expect(page.getByRole("dialog").getByLabel("原密码")).toBeVisible();
 });
 

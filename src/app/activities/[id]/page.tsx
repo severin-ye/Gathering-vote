@@ -14,6 +14,7 @@ interface Candidate {
   description: string;
   createdById: string;
   createdByUsername: string;
+  createdByDisplayName?: string;
   createdAt: string;
 }
 interface ActivityDetail {
@@ -24,6 +25,7 @@ interface ActivityDetail {
     eventDate: string;
     managerUserId: string | null;
     managerUsername: string | null;
+    managerDisplayName?: string | null;
     nominationEndsAt: string | null;
     votingEndsAt: string | null;
     phase: ActivityPhase;
@@ -34,7 +36,7 @@ interface ActivityDetail {
   results: { candidateId: string; score: number; rankCounts: number[] }[] | null;
   voterCount: number;
   isParticipant: boolean;
-  participants: { userId: string; username: string; hasBallot: boolean }[];
+  participants: { userId: string; username: string; displayName?: string; note?: string; hasBallot: boolean }[];
 }
 
 export default function ActivityPage() {
@@ -44,6 +46,7 @@ export default function ActivityPage() {
   const [data, setData] = useState<ActivityDetail | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Candidate | null>(null);
+  const [noting, setNoting] = useState<ActivityDetail["participants"][number] | null>(null);
   const [showDelete, setShowDelete] = useState(false);
 
   const load = useCallback(async () => {
@@ -105,7 +108,7 @@ export default function ActivityPage() {
           <h1>{activity.title}</h1>
           <p>{activity.description || "这场活动没有额外说明。"}</p>
           <div className="toolbar">
-            {activity.managerUsername ? <span className="badge"><Crown size={15} /> 管理员：{activity.managerUsername}</span> : <button className="button stamp" onClick={() => mutate(`/api/activities/${id}/manager`, "POST")}><Crown size={17} /> 申领管理员</button>}
+            {activity.managerUsername ? <span className="badge"><Crown size={15} /> 管理员：{activity.managerDisplayName ?? activity.managerUsername}</span> : <button className="button stamp" onClick={() => mutate(`/api/activities/${id}/manager`, "POST")}><Crown size={17} /> 申领管理员</button>}
             {!isParticipant && activity.phase !== "closed" && (
               <button className="button small join-stamp-button" onClick={() => mutate(`/api/activities/${id}/participants`, "POST")}>
                 <TicketCheck size={17} /> 参加活动
@@ -167,19 +170,29 @@ export default function ActivityPage() {
             {isManager && <DeadlineForm activity={activity} onSave={async (body) => { await mutate(`/api/activities/${id}/deadlines`, "PUT", body); }} />}
             {!activity.managerUserId && <div className="notice">申领管理员后才能设置两个截止时间。</div>}
           </section>
-          {activity.phase !== "closed" && <CurrentResults data={data} candidates={candidates} />}
+          {activity.phase !== "closed" && <CurrentResults data={data} candidates={candidates} currentUserId={user.id} onEditNote={setNoting} />}
         </aside>
       </div>
 
       {activity.phase === "nomination" && <section className="paper panel notice"><strong>候选仍在征集中。</strong>你可以随时保存当前排序；新候选会自动追加到末尾。</section>}
       {activity.phase === "setup" && <section className="paper panel notice"><strong>等待管理员设置时间。</strong>候选和个人排序现在都可以维护。</section>}
-      {activity.phase === "closed" && <Results data={data} candidates={candidates} />}
+      {activity.phase === "closed" && <Results data={data} candidates={candidates} currentUserId={user.id} onEditNote={setNoting} />}
       {showDelete && (
         <DeleteActivityDialog
           title={activity.title}
           onClose={() => setShowDelete(false)}
           onDeleted={() => router.push("/")}
           activityId={id}
+        />
+      )}
+      {noting && (
+        <UserNoteDialog
+          participant={noting}
+          onClose={() => setNoting(null)}
+          onSave={async (note) => {
+            const saved = await mutate(`/api/users/${noting.userId}/note`, "PUT", { note });
+            if (saved) setNoting(null);
+          }}
         />
       )}
     </main>
@@ -192,16 +205,20 @@ function CandidateList({ candidates }: { candidates: Candidate[] }) {
       <span className="rank-number">·</span>
       <div className="candidate-copy">
         <h3>{candidate.name}</h3>
-        <small className="muted">{candidate.description || `由 ${candidate.createdByUsername} 添加`}</small>
+        <small className="muted">{candidate.description || `由 ${candidate.createdByDisplayName ?? candidate.createdByUsername} 添加`}</small>
       </div>
     </div>
   ));
 }
 
 function ParticipantRoster({
-  participants
+  participants,
+  currentUserId,
+  onEditNote
 }: {
   participants: ActivityDetail["participants"];
+  currentUserId: string;
+  onEditNote: (participant: ActivityDetail["participants"][number]) => void;
 }) {
   const sorted = participants.filter((participant) => participant.hasBallot);
   const waiting = participants.filter((participant) => !participant.hasBallot);
@@ -216,7 +233,7 @@ function ParticipantRoster({
         <div className="participant-group">
           <strong className="participant-group-title sorted"><Check size={16} /> 已排序 · {sorted.length}</strong>
           <div className="participant-chips">
-            {sorted.map((participant) => <span className="participant-chip sorted" key={participant.userId}>{participant.username}<small>已排序</small></span>)}
+            {sorted.map((participant) => <ParticipantChip participant={participant} currentUserId={currentUserId} onEditNote={onEditNote} status="已排序" key={participant.userId} />)}
           </div>
         </div>
       )}
@@ -224,10 +241,61 @@ function ParticipantRoster({
         <div className="participant-group">
           <strong className="participant-group-title waiting">未排序 · {waiting.length}</strong>
           <div className="participant-chips">
-            {waiting.map((participant) => <span className="participant-chip waiting" key={participant.userId}>{participant.username}<small>未排序</small></span>)}
+            {waiting.map((participant) => <ParticipantChip participant={participant} currentUserId={currentUserId} onEditNote={onEditNote} status="未排序" key={participant.userId} />)}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ParticipantChip({
+  participant,
+  currentUserId,
+  onEditNote,
+  status
+}: {
+  participant: ActivityDetail["participants"][number];
+  currentUserId: string;
+  onEditNote: (participant: ActivityDetail["participants"][number]) => void;
+  status: "已排序" | "未排序";
+}) {
+  return (
+    <span className={`participant-chip ${participant.hasBallot ? "sorted" : "waiting"}`}>
+      {participant.displayName ?? participant.username}
+      <small>{status}</small>
+      {participant.userId !== currentUserId && (
+        <button type="button" className="note-edit-button" aria-label={`备注 ${participant.username}`} onClick={() => onEditNote(participant)}>
+          <Pencil size={13} />
+        </button>
+      )}
+    </span>
+  );
+}
+
+function UserNoteDialog({
+  participant,
+  onClose,
+  onSave
+}: {
+  participant: ActivityDetail["participants"][number];
+  onClose: () => void;
+  onSave: (note: string) => Promise<void>;
+}) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    await onSave(String(form.get("note") ?? ""));
+  }
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="user-note-title">
+      <form className="paper modal form-grid" onSubmit={submit}>
+        <span className="eyebrow">Private note · 仅自己可见</span>
+        <h2 id="user-note-title">备注“{participant.username}”</h2>
+        <label>我的备注<input name="note" defaultValue={participant.note ?? ""} placeholder="例如：桌游高手" maxLength={40} autoFocus /></label>
+        <small className="muted">显示格式：备注（{participant.username}）。留空保存会删除备注。</small>
+        <div className="toolbar"><button className="button primary">保存备注</button><button type="button" className="button" onClick={onClose}>取消</button></div>
+      </form>
     </div>
   );
 }
@@ -339,12 +407,22 @@ function DeadlineForm({ activity, onSave }: { activity: ActivityDetail["activity
   );
 }
 
-function Results({ data, candidates }: { data: ActivityDetail; candidates: Candidate[] }) {
+function Results({
+  data,
+  candidates,
+  currentUserId,
+  onEditNote
+}: {
+  data: ActivityDetail;
+  candidates: Candidate[];
+  currentUserId: string;
+  onEditNote: (participant: ActivityDetail["participants"][number]) => void;
+}) {
   return (
     <section className="paper panel fade-up">
       <span className="eyebrow">Final tally · {data.voterCount} 人投票</span>
       <h2>最终排名</h2>
-      <ParticipantRoster participants={data.participants ?? []} />
+      <ParticipantRoster participants={data.participants ?? []} currentUserId={currentUserId} onEditNote={onEditNote} />
       {!data.voterCount && <div className="empty">投票结束了，但还没有有效选票。</div>}
       {data.results?.map((result, index) => {
         const candidate = candidates.find((item) => item.id === result.candidateId);
@@ -365,7 +443,17 @@ function Results({ data, candidates }: { data: ActivityDetail; candidates: Candi
   );
 }
 
-function CurrentResults({ data, candidates }: { data: ActivityDetail; candidates: Candidate[] }) {
+function CurrentResults({
+  data,
+  candidates,
+  currentUserId,
+  onEditNote
+}: {
+  data: ActivityDetail;
+  candidates: Candidate[];
+  currentUserId: string;
+  onEditNote: (participant: ActivityDetail["participants"][number]) => void;
+}) {
   const maxScore = Math.max(0, ...(data.results?.map((result) => result.score) ?? []));
   return (
     <section
@@ -376,7 +464,7 @@ function CurrentResults({ data, candidates }: { data: ActivityDetail; candidates
     >
       <span className="eyebrow">Live tally · {data.voterCount} 人已保存</span>
       <h2>当前大家的排序</h2>
-      <ParticipantRoster participants={data.participants ?? []} />
+      <ParticipantRoster participants={data.participants ?? []} currentUserId={currentUserId} onEditNote={onEditNote} />
       <p className="muted">根据大家已经保存的排序实时计分。</p>
       {!data.voterCount && <div className="empty">还没有人保存排序。</div>}
       {!!data.voterCount && data.results?.map((result, index) => {

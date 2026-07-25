@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarPlus, KeyRound, LogOut, UsersRound } from "lucide-react";
+import { CalendarPlus, LogOut, UserCog, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -34,7 +34,7 @@ export default function HomePage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [activities, setActivities] = useState<ActivitySummary[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [createRequestId, setCreateRequestId] = useState("");
   const [createBusy, setCreateBusy] = useState(false);
   const [error, setError] = useState("");
@@ -94,7 +94,7 @@ export default function HomePage() {
         </div>
         <div className="toolbar">
           <span className="muted">{user?.username ?? "入席中…"}</span>
-          {user && <button className="button small" onClick={() => setShowPassword(true)}><KeyRound size={16} /> {user.hasPassword ? "修改密码" : "设置密码"}</button>}
+          {user && <button className="button small" onClick={() => setShowAccount(true)}><UserCog size={16} /> 账号管理</button>}
           <button className="button small" onClick={logout}><LogOut size={16} /> 退出</button>
         </div>
       </header>
@@ -144,13 +144,13 @@ export default function HomePage() {
           </form>
         </div>
       )}
-      {showPassword && user && (
-        <PasswordDialog
-          hasPassword={user.hasPassword}
-          onClose={() => setShowPassword(false)}
-          onChanged={() => {
-            setUser({ ...user, hasPassword: true });
-            setShowPassword(false);
+      {showAccount && user && (
+        <AccountDialog
+          user={user}
+          onClose={() => setShowAccount(false)}
+          onChanged={(updatedUser) => {
+            setUser(updatedUser);
+            setShowAccount(false);
           }}
         />
       )}
@@ -158,44 +158,47 @@ export default function HomePage() {
   );
 }
 
-function PasswordDialog({
-  hasPassword,
+function AccountDialog({
+  user,
   onClose,
   onChanged
 }: {
-  hasPassword: boolean;
+  user: CurrentUser;
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: (user: CurrentUser) => void;
 }) {
   const [error, setError] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     try {
-      await api("/api/auth/password", {
+      const response = await api<{ user: CurrentUser }>("/api/auth/account", {
         method: "PUT",
         body: JSON.stringify({
+          username: form.get("username"),
           currentPassword: form.get("currentPassword") ?? "",
-          newPassword: form.get("newPassword"),
-          confirmPassword: form.get("confirmPassword")
+          newPassword: form.get("newPassword") ?? "",
+          confirmPassword: form.get("confirmPassword") ?? ""
         })
       });
-      onChanged();
+      onChanged(response.user);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "密码更新失败");
+      setError(caught instanceof Error ? caught.message : "账号更新失败");
     }
   }
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="password-title">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="account-title">
       <form className="paper modal form-grid" onSubmit={submit}>
-        <span className="eyebrow">Account security</span>
-        <h2 id="password-title">{hasPassword ? "修改密码" : "为账号设置密码"}</h2>
-        {!hasPassword && <div className="notice">设置后，其他人不能再只凭你的用户名登录。</div>}
-        {hasPassword && <label>原密码<input name="currentPassword" type="password" autoComplete="current-password" required /></label>}
-        <label>新密码<input name="newPassword" type="password" autoComplete="new-password" minLength={6} maxLength={128} required /></label>
-        <label>再次输入新密码<input name="confirmPassword" type="password" autoComplete="new-password" minLength={6} maxLength={128} required /></label>
+        <span className="eyebrow">Account desk · 账号管理</span>
+        <h2 id="account-title">账号管理</h2>
+        <div className="notice">账号记录使用独立 ID。修改用户名不会影响你已经创建的活动、候选或排序。</div>
+        {!user.hasPassword && <div className="notice">设置密码后，其他人不能再只凭你的用户名登录。</div>}
+        <label>用户名<input name="username" defaultValue={user.username} minLength={2} maxLength={40} required /></label>
+        {user.hasPassword && <label>原密码<input name="currentPassword" type="password" autoComplete="current-password" required /></label>}
+        <label>新密码 <small className="muted">（不修改可留空）</small><input aria-label="新密码" name="newPassword" type="password" autoComplete="new-password" minLength={6} maxLength={128} /></label>
+        <label>再次输入新密码<input name="confirmPassword" type="password" autoComplete="new-password" minLength={6} maxLength={128} /></label>
         {error && <p className="error" role="alert">{error}</p>}
-        <div className="toolbar"><button className="button primary">{hasPassword ? "保存新密码" : "设置密码"}</button><button type="button" className="button" onClick={onClose}>取消</button></div>
+        <div className="toolbar"><button className="button primary">保存账号设置</button><button type="button" className="button" onClick={onClose}>取消</button></div>
       </form>
     </div>
   );

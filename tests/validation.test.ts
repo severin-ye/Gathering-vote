@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountUpdateSchema,
   activityDeadlinesSchema,
   activitySchema,
   ballotSchema,
   credentialsSchema,
   deleteActivitySchema,
   passwordChangeSchema,
-  registrationCredentialsSchema
+  registrationCredentialsSchema,
+  userNoteSchema
 } from "@/lib/validation";
 import { formatActivityTitle } from "@/lib/domain/activity";
 
@@ -55,6 +57,19 @@ describe("request validation", () => {
         confirmPassword: "different"
       }).success
     ).toBe(false);
+  });
+
+  it("allows renaming an account and validates private notes", () => {
+    expect(
+      accountUpdateSchema.safeParse({
+        username: "王小蛋",
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: ""
+      }).success
+    ).toBe(true);
+    expect(userNoteSchema.parse({ note: "桌游高手" })).toEqual({ note: "桌游高手" });
+    expect(userNoteSchema.safeParse({ note: "a".repeat(41) }).success).toBe(false);
   });
 
   it("requires voting to end after nominations", () => {

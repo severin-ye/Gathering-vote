@@ -40,6 +40,24 @@ export const sessions = pgTable(
   ]
 );
 
+export const userNotes = pgTable(
+  "user_notes",
+  {
+    ownerUserId: uuid("owner_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    targetUserId: uuid("target_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    note: text("note").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.ownerUserId, table.targetUserId] }),
+    index("user_notes_owner_idx").on(table.ownerUserId)
+  ]
+);
+
 export const activities = pgTable(
   "activities",
   {

@@ -55,6 +55,20 @@ describe("PostgreSQL constraints and transactions", () => {
     expect(state.rows[0]).toEqual({ participants: 1, ballots: 1, ballotItems: 1 });
   });
 
+  it("stores private per-viewer notes without changing either user id", async () => {
+    await db.exec(`
+      insert into user_notes (owner_user_id, target_user_id, note)
+      values ('${USER_A}', '${USER_B}', '桌游高手');
+    `);
+    const note = await db.query<{ owner: string; target: string; note: string }>(`
+      select owner_user_id owner, target_user_id target, note from user_notes
+    `);
+    expect(note.rows[0]).toEqual({ owner: USER_A, target: USER_B, note: "桌游高手" });
+    await expect(
+      db.exec(`insert into user_notes (owner_user_id, target_user_id, note) values ('${USER_A}', '${USER_B}', '重复')`)
+    ).rejects.toThrow();
+  });
+
   it("allows exactly one atomic manager claim", async () => {
     const claim = (userId: string) =>
       db.query(

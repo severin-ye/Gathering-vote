@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { activities, activityParticipants, ballotItems, ballots, candidates, users } from "@/db/schema";
+import { activities, activityParticipants, ballotItems, ballots, candidates, userNotes, users } from "@/db/schema";
 import { requireActivity } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { getActivityPhase } from "@/lib/domain/activity";
@@ -85,14 +85,36 @@ export async function GET(_request: Request, context: Context) {
       .innerJoin(users, eq(activityParticipants.userId, users.id))
       .where(eq(activityParticipants.activityId, id))
       .orderBy(asc(activityParticipants.joinedAt));
+    const noteRows = await getDb()
+      .select({
+        targetUserId: userNotes.targetUserId,
+        note: userNotes.note
+      })
+      .from(userNotes)
+      .where(eq(userNotes.ownerUserId, user.id));
+    const notes = new Map(noteRows.map((row) => [row.targetUserId, row.note]));
     const participants = participantRows.map((participant) => ({
       ...participant,
+      note: notes.get(participant.userId) ?? "",
+      displayName: observedName(participant.username, notes.get(participant.userId)),
       hasBallot: sortedUserIds.has(participant.userId)
     }));
 
     return NextResponse.json({
-      activity: { ...header, phase },
-      candidates: candidateRows,
+      activity: {
+        ...header,
+        managerDisplayName: header.managerUsername
+          ? observedName(header.managerUsername, header.managerUserId ? notes.get(header.managerUserId) : undefined)
+          : null,
+        phase
+      },
+      candidates: candidateRows.map((candidate) => ({
+        ...candidate,
+        createdByDisplayName: observedName(
+          candidate.createdByUsername,
+          notes.get(candidate.createdById)
+        )
+      })),
       ownBallot,
       results,
       voterCount,
@@ -102,6 +124,10 @@ export async function GET(_request: Request, context: Context) {
   } catch (error) {
     return apiError(error);
   }
+}
+
+function observedName(username: string, note?: string) {
+  return note ? `${note}（${username}）` : username;
 }
 
 export async function DELETE(request: Request, context: Context) {

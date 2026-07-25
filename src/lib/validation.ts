@@ -24,6 +24,26 @@ export const passwordChangeSchema = z
     path: ["confirmPassword"]
   });
 
+export const accountUpdateSchema = z
+  .object({
+    username: text("真名", 40),
+    currentPassword: z.string().max(128, "原密码过长").default(""),
+    newPassword: z.string().max(128, "新密码过长").default(""),
+    confirmPassword: z.string().max(128, "确认密码过长").default("")
+  })
+  .refine(({ newPassword }) => newPassword.length === 0 || newPassword.length >= 6, {
+    message: "新密码至少需要 6 个字符",
+    path: ["newPassword"]
+  })
+  .refine(({ newPassword, confirmPassword }) => newPassword === confirmPassword, {
+    message: "两次输入的新密码不一致",
+    path: ["confirmPassword"]
+  });
+
+export const userNoteSchema = z.object({
+  note: z.string().trim().max(40, "备注最多 40 个字符")
+});
+
 export const activitySchema = z.object({
   title: z.string().trim().max(80, "活动名称过长").default(""),
   eventDate: z.iso.date(),

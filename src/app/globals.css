@@ -241,6 +241,19 @@ textarea { min-height: 90px; resize: vertical; }
   font-size: .68rem;
   letter-spacing: .04em;
 }
+.note-edit-button {
+  width: 25px;
+  height: 25px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  border: 1px dashed currentColor;
+  cursor: pointer;
+}
+.note-edit-button:hover { background: rgba(255,255,255,.48); }
+.note-edit-button:focus-visible { outline: 3px solid #1673ff; outline-offset: 2px; }
 .participant-chip.sorted { color: var(--green); transform: rotate(-.6deg); }
 .participant-chip.waiting { color: var(--stamp-dark); transform: rotate(.5deg); }
 .live-tally { position: relative; overflow: hidden; }
