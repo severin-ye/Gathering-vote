@@ -117,11 +117,16 @@ test("时间建议只提示，管理员仍可确认保存", async ({ page }) => 
   });
 
   await page.goto(`/activities/${activityId}`);
+  await expect(page.getByLabel("候选截止")).toHaveAttribute("min", /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+  await expect(page.getByLabel("排序截止")).toHaveAttribute("min", /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
   await page.getByLabel("候选截止").fill("2026-08-05T21:00");
   await page.getByLabel("排序截止").fill("2026-08-06T01:00");
   await page.getByRole("button", { name: "保存时间" }).click();
 
   let dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("问题 1", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("问题 2", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("问题 3", { exact: true })).toHaveCount(0);
   await expect(dialog).toContainText("排序截止日期最好至少比活动日期早一天");
   await expect(dialog).toContainText("至少比排序截止时间早 6 小时");
   await dialog.getByRole("button", { name: "再想想" }).click();

@@ -65,6 +65,14 @@ describe("request validation", () => {
     expect(invalid.success).toBe(false);
   });
 
+  it("rejects nomination and voting deadlines in the past", () => {
+    const past = activityDeadlinesSchema.safeParse({
+      nominationEndsAt: "2000-01-01T10:00:00.000Z",
+      votingEndsAt: "2000-01-01T16:00:00.000Z"
+    });
+    expect(past.success).toBe(false);
+  });
+
   it("rejects duplicate ballot candidate ids", () => {
     expect(ballotSchema.safeParse({ candidateIds: ["a", "a"] }).success).toBe(false);
   });

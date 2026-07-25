@@ -227,6 +227,7 @@ function DeleteActivityDialog({
 function DeadlineForm({ activity, onSave }: { activity: ActivityDetail["activity"]; onSave: (body: object) => Promise<void> }) {
   const [warnings, setWarnings] = useState<DeadlineWarning[]>([]);
   const [pending, setPending] = useState<{ nominationEndsAt: string; votingEndsAt: string } | null>(null);
+  const [minimumDeadline] = useState(() => toLocalInput(new Date().toISOString()));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -256,8 +257,8 @@ function DeadlineForm({ activity, onSave }: { activity: ActivityDetail["activity
   return (
     <>
       <form className="form-grid" onSubmit={submit}>
-        <label>候选截止<input type="datetime-local" name="nominationEndsAt" defaultValue={toLocalInput(activity.nominationEndsAt)} required /></label>
-        <label>排序截止<input type="datetime-local" name="votingEndsAt" defaultValue={toLocalInput(activity.votingEndsAt)} required /></label>
+        <label>候选截止<input type="datetime-local" name="nominationEndsAt" min={minimumDeadline} defaultValue={toLocalInput(activity.nominationEndsAt)} required /></label>
+        <label>排序截止<input type="datetime-local" name="votingEndsAt" min={minimumDeadline} defaultValue={toLocalInput(activity.votingEndsAt)} required /></label>
         <button className="button primary">保存时间</button>
       </form>
       {!!warnings.length && (
@@ -265,8 +266,16 @@ function DeadlineForm({ activity, onSave }: { activity: ActivityDetail["activity
           <div className="paper modal form-grid">
             <span className="eyebrow">时间安排提醒</span>
             <h2 id="deadline-warning-title">这个时间安排有点紧</h2>
-            <div className="notice">
-              {warnings.map((warning) => <p key={warning.code}>{warning.message}</p>)}
+            <div className="notice deadline-warning-list">
+              {warnings.map((warning, index) => (
+                <div className="deadline-warning-item" key={warning.code}>
+                  <span className="warning-brush-number" aria-hidden="true">{index + 1}</span>
+                  <div>
+                    <strong className="warning-title">问题 {index + 1}</strong>
+                    <p>{warning.message}</p>
+                  </div>
+                </div>
+              ))}
               <small className="muted">这些是建议，不是强制要求。你仍然可以保存当前设置。</small>
             </div>
             <div className="toolbar">

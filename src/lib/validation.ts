@@ -37,6 +37,14 @@ export const activityDeadlinesSchema = z
     votingEndsAt: z.iso.datetime()
   })
   .refine(
+    ({ nominationEndsAt }) => new Date(nominationEndsAt).getTime() > Date.now(),
+    { message: "候选截止时间必须晚于当前时间", path: ["nominationEndsAt"] }
+  )
+  .refine(
+    ({ votingEndsAt }) => new Date(votingEndsAt).getTime() > Date.now(),
+    { message: "排序截止时间必须晚于当前时间", path: ["votingEndsAt"] }
+  )
+  .refine(
     ({ nominationEndsAt, votingEndsAt }) =>
       new Date(votingEndsAt).getTime() > new Date(nominationEndsAt).getTime(),
     { message: "排序截止时间必须晚于候选截止时间", path: ["votingEndsAt"] }

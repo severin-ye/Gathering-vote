@@ -27,10 +27,13 @@ describe("activity phases", () => {
 describe("deadline recommendations", () => {
   it("compares the voting deadline by calendar date rather than 24 hours", () => {
     expect(
-      getDeadlineWarnings("2026-08-06", "2026-08-05T18:00", "2026-08-05T23:59")
-    ).toEqual([
-      expect.objectContaining({ code: "nomination-gap-short" })
-    ]);
+      getDeadlineWarnings(
+        "2026-08-26",
+        "2026-08-25T16:00",
+        "2026-08-25T23:00",
+        new Date("2026-08-24T12:00")
+      )
+    ).toEqual([]);
   });
 
   it("warns when voting is not a day earlier or nomination has less than six hours", () => {
@@ -44,6 +47,17 @@ describe("deadline recommendations", () => {
     expect(
       getDeadlineWarnings("2026-08-06", "2026-08-04T18:00", "2026-08-05T18:00")
     ).toEqual([]);
+  });
+
+  it("warns when nominations close less than two hours from now", () => {
+    expect(
+      getDeadlineWarnings(
+        "2026-08-07",
+        "2026-08-05T21:30",
+        "2026-08-06T04:00",
+        new Date("2026-08-05T20:00")
+      ).map((warning) => warning.code)
+    ).toEqual(["nomination-too-soon"]);
   });
 });
 
