@@ -67,10 +67,15 @@ jobs:
           DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
+          # 把 deploy.sh 拷到临时位置再用 bash 执行：
+          # 1) 不依赖 git 的 exec 位；2) 避免脚本运行中被 git checkout 覆盖自身。
           ssh \
             -i ~/.ssh/id_ed25519 \
             -p "$SSH_PORT" \
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             "$SSH_USER@$SSH_HOST" \
-            "DEPLOY_SHA='$DEPLOY_SHA' /srv/gathering-vote/app/scripts/deploy.sh"
+            "set -Eeuo pipefail; \
+             cp /srv/gathering-vote/app/scripts/deploy.sh /tmp/gv-deploy.sh; \
+             rc=0; DEPLOY_SHA='$DEPLOY_SHA' bash /tmp/gv-deploy.sh || rc=\$?; \
+             rm -f /tmp/gv-deploy.sh; exit \$rc"
