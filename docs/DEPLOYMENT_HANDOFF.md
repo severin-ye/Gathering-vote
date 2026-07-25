@@ -1,5 +1,51 @@
 # Gathering-vote 部署交接文档
 
+## 0. CI/CD 自动部署（当前生产方式）
+
+生产环境通过 GitHub Actions 自动部署：`git push origin main` 后无需任何手动操作。
+
+```text
+push 到 main
+  ↓
+Test job：lint + typecheck + 单元测试（PGlite）
+  ↓ 全过
+Build and deploy job：
+  CI 上 npm ci + next build（standalone 产物）
+  ↓
+  打包 standalone + .next/static + drizzle/ 迁移文件
+  ↓ scp 到服务器 /srv/gathering-vote/releases/<sha>.tar.gz
+  SSH 触发服务器 scripts/deploy.sh
+  ↓
+  解压 → 迁移前 pg_dump 备份 → drizzle-kit migrate
+  → 切换 current 软链 → systemctl restart → 健康检查 → 清理旧版本
+```
+
+**为什么这样设计**：生产服务器内存仅 1.6GB，`npm ci` + `next build` 峰值会 OOM（曾把机器打满到 CPU 100%）。因此构建放在 CI runner（资源充足），服务器只接收 standalone 产物并重启，几乎零负载。服务器上**不做** `npm ci` / `next build` / `git`。
+
+**关键组成**
+
+- `next.config.ts` 开 `output: "standalone"`，构建出自包含 `server.js` + 精简 `node_modules`。
+- 发布目录：`/srv/gathering-vote/releases/<sha>/`，软链 `/srv/gathering-vote/current` 指向当前版本，保留最近 3 个版本便于回滚。
+- systemd 运行 `node /srv/gathering-vote/current/server.js`（`PORT=3000`、`HOSTNAME=127.0.0.1`），Caddy 把 `gathering-vote.wrui.me` 反代到 `127.0.0.1:3000`。
+- 迁移工具：`/srv/gathering-vote/db-tools/`（一次性安装 `drizzle-kit` + `drizzle-orm` + `postgres` + `dotenv`），deploy.sh 把 `drizzle.config.ts` + `drizzle/` 复制到其 `work/` 子目录后执行 `drizzle-kit migrate`。
+- 国际网络：服务器 git 与 npm 均配置走本机 `http://127.0.0.1:8080` 代理。
+
+**GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）
+
+| Secret | 说明 |
+| --- | --- |
+| `ALIYUN_HOST` | 服务器 IP |
+| `ALIYUN_PORT` | SSH 端口 |
+| `ALIYUN_USER` | `deploy`（非 root，仅有 `systemctl restart/status gathering-vote.service` 的窄 sudo） |
+| `ALIYUN_SSH_KEY` | GitHub Actions 专用私钥 |
+| `ALIYUN_KNOWN_HOSTS` | 服务器主机公钥记录 |
+
+**回滚**：将 `current` 软链指回上一个 release 后 `sudo systemctl restart gathering-vote.service` 即可。数据库迁移无自动降级，需用 `/srv/gathering-vote/backups/` 里的 `pg_dump` 备份恢复。
+
+**手动重新部署**：在 Actions 页面选择最近一次运行点 "Re-run all jobs"，或用 `workflow_dispatch` 手动触发。
+
+---
+
 ## 1. 项目概况
 
 Gathering-vote 是一个 Next.js 15、TypeScript、PostgreSQL 和 Drizzle ORM 应用。应用服务器无本地持久化状态，用户、Session、活动、候选和选票均保存在 PostgreSQL 中。
@@ -54,6 +100,8 @@ curl -i https://你的域名/api/auth/me
 预期为 HTTP 200，响应体包含 `"user":null` 或当前登录用户信息。
 
 ## 4. 普通 Linux 服务器部署
+
+> **注意**：本节描述的"在服务器上 npm ci + next build"方式已被 [第 0 节 CI/CD](#0-cicd-自动部署当前生产方式) 取代。生产服务器内存较小，不应再在服务器上构建。本节仅供参考，或用于无 CI 的环境。
 
 以下示例适用于 Ubuntu 24.04、Nginx、systemd 和独立 PostgreSQL。将路径和域名替换为实际值。
 
@@ -156,6 +204,8 @@ sudo certbot --nginx -d vote.example.com
 ```
 
 ## 5. 更新流程
+
+> **注意**：日常更新已由 [第 0 节 CI/CD](#0-cicd-自动部署当前生产方式) 自动完成（`git push origin main` 即可）。下面的手动流程仅作参考或应急使用。
 
 ```bash
 cd /srv/gathering-vote/app

@@ -30,7 +30,11 @@ npm run build
 
 单元测试覆盖活动状态、计票、认证和输入契约；数据库集成测试使用 PGlite 执行真实 PostgreSQL migration；Playwright 同时验证桌面和移动端关键流程。
 
-## 部署到 Vercel
+## 生产部署（CI/CD）
+
+生产环境通过 GitHub Actions 自动部署到阿里云服务器：`git push origin main` 即可。流水线先跑 lint / typecheck / 单元测试，全过后在 CI 上构建 Next.js standalone 产物，上传到服务器解压、迁移数据库、切换软链并重启。服务器配置较低，构建全部在 CI 完成。详见 [部署交接文档](docs/DEPLOYMENT_HANDOFF.md) 第 0 节。
+
+## 部署到 Vercel（备选）
 
 1. 创建托管 PostgreSQL 数据库并复制连接字符串。
 2. 在 Vercel 项目中设置 `DATABASE_URL`。
