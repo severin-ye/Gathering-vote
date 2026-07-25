@@ -40,12 +40,42 @@ jobs:
         run: npm test
 
   deploy:
-    name: Deploy
+    name: Build and deploy
     needs: test
     runs-on: ubuntu-latest
     environment:
       name: production
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build standalone
+        # 页面均为客户端组件、数据在运行时经 API 加载，构建期不访问数据库。
+        # 仅占位以满足构建期对 DATABASE_URL 的引用，连接是惰性的不会真正发起。
+        env:
+          DATABASE_URL: postgres://localhost:5432/build
+        run: npm run build
+
+      - name: Assemble release
+        run: |
+          set -Eeuo pipefail
+          # standalone 产物不含 .next/static，需手动补入
+          cp -r .next/static .next/standalone/.next/static
+          # 附带数据库迁移所需文件，供服务器端 drizzle-kit migrate 使用
+          cp drizzle.config.ts .next/standalone/
+          cp -r drizzle .next/standalone/
+          tar -czf release.tar.gz -C .next/standalone .
+          ls -lh release.tar.gz
+
       - name: Configure SSH
         env:
           SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_KEY }}
@@ -59,7 +89,7 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Deploy exact commit
+      - name: Upload release and deploy script
         env:
           SSH_HOST: ${{ secrets.ALIYUN_HOST }}
           SSH_PORT: ${{ secrets.ALIYUN_PORT }}
@@ -67,18 +97,24 @@ jobs:
           DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          # 先在服务器上 fetch 并 checkout 到目标 commit，再执行该版本的 deploy.sh。
-          # 这样运行的是目标提交里的脚本（脚本更新立即生效），且脚本内部的
-          # checkout 变成无操作，不会在运行中被覆盖。用 bash 执行，不依赖 exec 位。
-          ssh \
-            -i ~/.ssh/id_ed25519 \
-            -p "$SSH_PORT" \
-            -o BatchMode=yes \
-            -o StrictHostKeyChecking=yes \
+          scp -i ~/.ssh/id_ed25519 -P "$SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            release.tar.gz \
+            "$SSH_USER@$SSH_HOST:/srv/gathering-vote/releases/$DEPLOY_SHA.tar.gz"
+          scp -i ~/.ssh/id_ed25519 -P "$SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            scripts/deploy.sh \
+            "$SSH_USER@$SSH_HOST:/srv/gathering-vote/deploy.sh"
+
+      - name: Deploy on server
+        env:
+          SSH_HOST: ${{ secrets.ALIYUN_HOST }}
+          SSH_PORT: ${{ secrets.ALIYUN_PORT }}
+          SSH_USER: ${{ secrets.ALIYUN_USER }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          set -Eeuo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$SSH_USER@$SSH_HOST" \
-            "set -Eeuo pipefail; \
-             cd /srv/gathering-vote/app; \
-             git fetch --prune origin main; \
-             git merge-base --is-ancestor '$DEPLOY_SHA' origin/main; \
-             git checkout -B main '$DEPLOY_SHA'; \
-             DEPLOY_SHA='$DEPLOY_SHA' bash scripts/deploy.sh"
+            "DEPLOY_SHA='$DEPLOY_SHA' bash /srv/gathering-vote/deploy.sh"
