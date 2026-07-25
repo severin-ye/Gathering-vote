@@ -85,6 +85,23 @@ export const candidates = pgTable(
   ]
 );
 
+export const activityParticipants = pgTable(
+  "activity_participants",
+  {
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.activityId, table.userId] }),
+    index("activity_participants_activity_idx").on(table.activityId)
+  ]
+);
+
 export const ballots = pgTable(
   "ballots",
   {

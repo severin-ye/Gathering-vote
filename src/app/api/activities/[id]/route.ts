@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { activities, ballotItems, ballots, candidates, users } from "@/db/schema";
+import { activities, activityParticipants, ballotItems, ballots, candidates, users } from "@/db/schema";
 import { requireActivity } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { getActivityPhase } from "@/lib/domain/activity";
@@ -61,25 +61,43 @@ export async function GET(_request: Request, context: Context) {
       .map((row) => row.candidateId);
 
     const phase = getActivityPhase(activity.nominationEndsAt, activity.votingEndsAt);
-    let results: ReturnType<typeof calculateBordaResults> | null = null;
-    let voterCount = 0;
-    if (phase === "closed") {
-      const grouped = new Map<string, string[]>();
-      for (const row of ownBallotRows) {
-        const list = grouped.get(row.userId) ?? [];
-        list.push(row.candidateId);
-        grouped.set(row.userId, list);
-      }
-      voterCount = grouped.size;
-      results = calculateBordaResults(candidateRows, [...grouped.values()]);
+    const grouped = new Map<string, string[]>();
+    for (const row of ownBallotRows) {
+      const list = grouped.get(row.userId) ?? [];
+      list.push(row.candidateId);
+      grouped.set(row.userId, list);
     }
+    const completedBallots = [...grouped.entries()]
+      .filter(([, ranking]) => candidateRows.length > 0 && ranking.length === candidateRows.length);
+    const sortedUserIds = new Set(completedBallots.map(([userId]) => userId));
+    const voterCount = completedBallots.length;
+    const results = calculateBordaResults(
+      candidateRows,
+      completedBallots.map(([, ranking]) => ranking)
+    );
+
+    const participantRows = await getDb()
+      .select({
+        userId: activityParticipants.userId,
+        username: users.username
+      })
+      .from(activityParticipants)
+      .innerJoin(users, eq(activityParticipants.userId, users.id))
+      .where(eq(activityParticipants.activityId, id))
+      .orderBy(asc(activityParticipants.joinedAt));
+    const participants = participantRows.map((participant) => ({
+      ...participant,
+      hasBallot: sortedUserIds.has(participant.userId)
+    }));
 
     return NextResponse.json({
       activity: { ...header, phase },
       candidates: candidateRows,
       ownBallot,
       results,
-      voterCount
+      voterCount,
+      participants,
+      isParticipant: participants.some((participant) => participant.userId === user.id)
     });
   } catch (error) {
     return apiError(error);

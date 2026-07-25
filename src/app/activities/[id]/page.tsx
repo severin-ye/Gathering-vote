@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CalendarClock, Crown, Pencil, Plus, Trash2, UserMinus } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Crown, Pencil, Plus, TicketCheck, Trash2, UserMinus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -33,6 +33,8 @@ interface ActivityDetail {
   ownBallot: string[];
   results: { candidateId: string; score: number; rankCounts: number[] }[] | null;
   voterCount: number;
+  isParticipant: boolean;
+  participants: { userId: string; username: string; hasBallot: boolean }[];
 }
 
 export default function ActivityPage() {
@@ -61,6 +63,7 @@ export default function ActivityPage() {
   const { activity, candidates } = data;
   const isManager = activity.managerUserId === user.id;
   const canNominate = activity.phase === "setup" || activity.phase === "nomination";
+  const isParticipant = data.isParticipant ?? true;
 
   async function mutate(path: string, method: string, body?: object) {
     try {
@@ -103,6 +106,11 @@ export default function ActivityPage() {
           <p>{activity.description || "这场活动没有额外说明。"}</p>
           <div className="toolbar">
             {activity.managerUsername ? <span className="badge"><Crown size={15} /> 管理员：{activity.managerUsername}</span> : <button className="button stamp" onClick={() => mutate(`/api/activities/${id}/manager`, "POST")}><Crown size={17} /> 申领管理员</button>}
+            {!isParticipant && activity.phase !== "closed" && (
+              <button className="button small join-stamp-button" onClick={() => mutate(`/api/activities/${id}/participants`, "POST")}>
+                <TicketCheck size={17} /> 参加活动
+              </button>
+            )}
             {isManager && <button className="button danger small" onClick={() => mutate(`/api/activities/${id}/manager`, "DELETE")}><UserMinus size={16} /> 解除管理</button>}
             {isManager && <button className="button danger small" onClick={() => setShowDelete(true)}><Trash2 size={16} /> 删除这个活动</button>}
           </div>
@@ -114,8 +122,8 @@ export default function ActivityPage() {
       <div className="split">
         <div>
           <section className="paper panel fade-up" style={{ "--i": 1 } as React.CSSProperties}>
-            <h2>{activity.phase === "closed" ? "最终候选" : "拖拽我的排序"} <small className="muted">· {candidates.length}</small></h2>
-            {activity.phase !== "closed" ? (
+            <h2>{activity.phase === "closed" ? "最终候选" : isParticipant ? "拖拽我的排序" : "候选清单"} <small className="muted">· {candidates.length}</small></h2>
+            {activity.phase !== "closed" && isParticipant ? (
               <RankingBoard
                 candidates={candidates}
                 initialOrder={data.ownBallot}
@@ -133,20 +141,15 @@ export default function ActivityPage() {
                 }
               />
             ) : (
-              candidates.map((candidate) => (
-                <div className="candidate" key={candidate.id}>
-                  <span className="rank-number">·</span>
-                  <div className="candidate-copy">
-                    <h3>{candidate.name}</h3>
-                    <small className="muted">{candidate.description || `由 ${candidate.createdByUsername} 添加`}</small>
-                  </div>
-                </div>
-              ))
+              <CandidateList candidates={candidates} />
             )}
             {!candidates.length && <div className="empty">还没有候选项，先写下一张。</div>}
+            {activity.phase !== "closed" && !isParticipant && (
+              <div className="notice">参加这场活动后，才能添加候选并保存自己的排序。</div>
+            )}
           </section>
 
-          {canNominate && (
+          {canNominate && isParticipant && (
             <form className="paper panel form-grid" onSubmit={saveCandidate}>
               <h2>{editing ? `修改“${editing.name}”` : "添加候选项"}</h2>
               <label>候选名称<input key={editing?.id ?? "new-name"} name="name" defaultValue={editing?.name} placeholder="火锅、桌游、看电影…" minLength={2} maxLength={100} required /></label>
@@ -164,6 +167,7 @@ export default function ActivityPage() {
             {isManager && <DeadlineForm activity={activity} onSave={async (body) => { await mutate(`/api/activities/${id}/deadlines`, "PUT", body); }} />}
             {!activity.managerUserId && <div className="notice">申领管理员后才能设置两个截止时间。</div>}
           </section>
+          {activity.phase !== "closed" && <CurrentResults data={data} candidates={candidates} />}
         </aside>
       </div>
 
@@ -179,6 +183,52 @@ export default function ActivityPage() {
         />
       )}
     </main>
+  );
+}
+
+function CandidateList({ candidates }: { candidates: Candidate[] }) {
+  return candidates.map((candidate) => (
+    <div className="candidate" key={candidate.id}>
+      <span className="rank-number">·</span>
+      <div className="candidate-copy">
+        <h3>{candidate.name}</h3>
+        <small className="muted">{candidate.description || `由 ${candidate.createdByUsername} 添加`}</small>
+      </div>
+    </div>
+  ));
+}
+
+function ParticipantRoster({
+  participants
+}: {
+  participants: ActivityDetail["participants"];
+}) {
+  const sorted = participants.filter((participant) => participant.hasBallot);
+  const waiting = participants.filter((participant) => !participant.hasBallot);
+  return (
+    <div className="participant-roster-inline" role="region" aria-label="参加与排序状态">
+      <div className="participant-roster-heading">
+        <strong><UsersRound size={18} /> 参加与排序状态</strong>
+        <small>{participants.length} 人参加</small>
+      </div>
+      {!participants.length && <p className="muted">还没有人参加这场活动。</p>}
+      {!!sorted.length && (
+        <div className="participant-group">
+          <strong className="participant-group-title sorted"><Check size={16} /> 已排序 · {sorted.length}</strong>
+          <div className="participant-chips">
+            {sorted.map((participant) => <span className="participant-chip sorted" key={participant.userId}>{participant.username}<small>已排序</small></span>)}
+          </div>
+        </div>
+      )}
+      {!!waiting.length && (
+        <div className="participant-group">
+          <strong className="participant-group-title waiting">未排序 · {waiting.length}</strong>
+          <div className="participant-chips">
+            {waiting.map((participant) => <span className="participant-chip waiting" key={participant.userId}>{participant.username}<small>未排序</small></span>)}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -294,6 +344,7 @@ function Results({ data, candidates }: { data: ActivityDetail; candidates: Candi
     <section className="paper panel fade-up">
       <span className="eyebrow">Final tally · {data.voterCount} 人投票</span>
       <h2>最终排名</h2>
+      <ParticipantRoster participants={data.participants ?? []} />
       {!data.voterCount && <div className="empty">投票结束了，但还没有有效选票。</div>}
       {data.results?.map((result, index) => {
         const candidate = candidates.find((item) => item.id === result.candidateId);
@@ -307,6 +358,44 @@ function Results({ data, candidates }: { data: ActivityDetail; candidates: Candi
               <small className="muted">{result.rankCounts.map((count, rank) => `第${rank + 1}名 ${count}票`).join(" · ")}</small>
             </div>
             <span className="score">{result.score} 分</span>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function CurrentResults({ data, candidates }: { data: ActivityDetail; candidates: Candidate[] }) {
+  const maxScore = Math.max(0, ...(data.results?.map((result) => result.score) ?? []));
+  return (
+    <section
+      className="paper panel live-tally fade-up"
+      style={{ "--i": 4 } as React.CSSProperties}
+      role="region"
+      aria-label="当前大家的排序"
+    >
+      <span className="eyebrow">Live tally · {data.voterCount} 人已保存</span>
+      <h2>当前大家的排序</h2>
+      <ParticipantRoster participants={data.participants ?? []} />
+      <p className="muted">根据大家已经保存的排序实时计分。</p>
+      {!data.voterCount && <div className="empty">还没有人保存排序。</div>}
+      {!!data.voterCount && data.results?.map((result, index) => {
+        const candidate = candidates.find((item) => item.id === result.candidateId);
+        const width = maxScore > 0 ? (result.score / maxScore) * 100 : 0;
+        return (
+          <div
+            className="tally-row"
+            key={result.candidateId}
+            aria-label={`${candidate?.name ?? "候选项"}，第 ${index + 1} 名，${result.score} 分`}
+          >
+            <div className="tally-label">
+              <span className="tally-rank">{index + 1}</span>
+              <strong>{candidate?.name}</strong>
+              <span className="tally-score">{result.score} 分</span>
+            </div>
+            <div className="tally-bar" aria-hidden="true">
+              <span className="tally-bar-fill" style={{ width: `${width}%` }} />
+            </div>
           </div>
         );
       })}

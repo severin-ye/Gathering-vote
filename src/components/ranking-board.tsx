@@ -45,6 +45,9 @@ export function RankingBoard({
   const defaultIds = mergeRankingOrder(initialOrder, candidateIds);
   const [ids, setIds] = useState(defaultIds);
   const [status, setStatus] = useState("");
+  const [savedIds, setSavedIds] = useState<string[]>(
+    initialOrder.length === candidateIds.length && candidateIds.length > 0 ? defaultIds : []
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 7 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 5 } }),
@@ -52,8 +55,20 @@ export function RankingBoard({
   );
 
   useEffect(() => {
-    setIds(mergeRankingOrder(initialOrder, candidates.map((item) => item.id)));
+    const nextCandidateIds = candidates.map((item) => item.id);
+    const nextIds = mergeRankingOrder(initialOrder, nextCandidateIds);
+    setIds(nextIds);
+    setSavedIds(
+      initialOrder.length === nextCandidateIds.length && nextCandidateIds.length > 0
+        ? nextIds
+        : []
+    );
   }, [candidates, initialOrder]);
+
+  const isSaved =
+    ids.length > 0 &&
+    ids.length === savedIds.length &&
+    ids.every((id, index) => id === savedIds[index]);
 
   function move(index: number, direction: -1 | 1) {
     const target = index + direction;
@@ -76,7 +91,8 @@ export function RankingBoard({
     setStatus("保存中…");
     try {
       await onSave(ids);
-      setStatus("已保存这份排序 ✓");
+      setSavedIds([...ids]);
+      setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "保存失败");
     }
@@ -96,7 +112,8 @@ export function RankingBoard({
       </DndContext>
       <div className="toolbar" style={{ marginTop: 18 }}>
         <button className="button stamp" onClick={save} disabled={!ids.length}><Save size={18} /> 保存我的排序</button>
-        {status && <span className={status.includes("✓") ? "success" : "muted"} role="status">{status}</span>}
+        {isSaved && !status && <span className="success" role="status">已保存这份排序 ✓</span>}
+        {status && <span className="muted" role="status">{status}</span>}
       </div>
     </div>
   );

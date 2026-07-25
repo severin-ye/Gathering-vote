@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { candidates } from "@/db/schema";
-import { assertNominationOpen, requireActivity } from "@/lib/activity-access";
+import { assertNominationOpen, requireActivity, requireParticipant } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { normalizeName } from "@/lib/domain/normalization";
 import { apiError, assertSameOrigin, HttpError, parseJson } from "@/lib/http";
@@ -13,6 +13,7 @@ type Context = { params: Promise<{ id: string; candidateId: string }> };
 async function getEditableCandidate(id: string, candidateId: string, userId: string) {
   const activity = await requireActivity(id);
   assertNominationOpen(activity);
+  await requireParticipant(id, userId);
   const [candidate] = await getDb()
     .select()
     .from(candidates)

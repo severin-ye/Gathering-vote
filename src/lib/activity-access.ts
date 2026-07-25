@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { activities } from "@/db/schema";
+import { activities, activityParticipants } from "@/db/schema";
 import { getActivityPhase } from "./domain/activity";
 import { HttpError } from "./http";
 
@@ -16,6 +16,21 @@ export async function requireActivity(activityId: string) {
 
 export function assertManager(activity: { managerUserId: string | null }, userId: string) {
   if (activity.managerUserId !== userId) throw new HttpError(403, "只有活动管理员可以操作");
+}
+
+export async function requireParticipant(activityId: string, userId: string) {
+  const [participant] = await getDb()
+    .select({ userId: activityParticipants.userId })
+    .from(activityParticipants)
+    .where(
+      and(
+        eq(activityParticipants.activityId, activityId),
+        eq(activityParticipants.userId, userId)
+      )
+    )
+    .limit(1);
+  if (!participant) throw new HttpError(403, "请先参加这场活动");
+  return participant;
 }
 
 export function assertNominationOpen(activity: {

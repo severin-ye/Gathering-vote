@@ -75,9 +75,12 @@ test("用户可以进入活动、用按钮排序并保存唯一选票", async ({
         updatedAt: "2026-07-24T10:00:00Z"
       },
       candidates,
-      ownBallot: [],
-      results: null,
-      voterCount: 0
+      ownBallot: savedOrder,
+      results: [
+        { candidateId: candidates[1].id, score: 3, rankCounts: [2, 0] },
+        { candidateId: candidates[0].id, score: 1, rankCounts: [0, 2] }
+      ],
+      voterCount: 2
     }
   }));
   await page.route(`**/api/activities/${activityId}/ballot`, async (route) => {
@@ -96,6 +99,64 @@ test("用户可以进入活动、用按钮排序并保存唯一选票", async ({
   await page.getByRole("button", { name: /保存我的排序/ }).click();
   await expect(page.getByText("已保存这份排序 ✓")).toBeVisible();
   expect(savedOrder).toEqual([candidates[1].id, candidates[0].id]);
+  const liveRanking = page.getByRole("region", { name: "当前大家的排序" });
+  await expect(liveRanking).toBeVisible();
+  await expect(liveRanking.getByText("桌游")).toBeVisible();
+  await expect(liveRanking.getByText("3 分")).toBeVisible();
+  await expect(liveRanking.locator(".tally-bar-fill").first()).toHaveAttribute("style", /100%/);
+
+  await page.reload();
+  await expect(page.getByText("已保存这份排序 ✓")).toBeVisible();
+  await page.getByRole("button", { name: "桌游 下移" }).click();
+  await expect(page.getByText("已保存这份排序 ✓")).toHaveCount(0);
+});
+
+test("参加后才能添加候选和排序，并区分已排序与未排序人员", async ({ page }) => {
+  const friend = {
+    id: "00000000-0000-4000-8000-000000000002",
+    username: "朋友甲"
+  };
+  let joined = false;
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
+    json: {
+      activity: {
+        id: activityId, title: "周六吃什么", description: "", eventDate: "2026-08-06",
+        managerUserId: friend.id, managerUsername: friend.username,
+        nominationEndsAt: "2099-07-24T10:00:00Z", votingEndsAt: "2099-07-25T10:00:00Z",
+        phase: "nomination", updatedAt: "2026-07-24T10:00:00Z"
+      },
+      candidates,
+      ownBallot: [],
+      results: [],
+      voterCount: 1,
+      isParticipant: joined,
+      participants: [
+        { userId: friend.id, username: friend.username, hasBallot: true },
+        ...(joined ? [{ userId: user.id, username: user.username, hasBallot: false }] : [])
+      ]
+    }
+  }));
+  await page.route(`**/api/activities/${activityId}/participants`, async (route) => {
+    joined = true;
+    await route.fulfill({ status: 201, json: { ok: true } });
+  });
+
+  await page.goto(`/activities/${activityId}`);
+  const roster = page.getByRole("region", { name: "参加与排序状态" });
+  await expect(roster.getByText(friend.username)).toBeVisible();
+  await expect(roster.getByText("已排序", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "添加候选项" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "保存我的排序" })).toHaveCount(0);
+
+  const joinButton = page.getByRole("button", { name: "参加活动" });
+  await expect(page.locator(".hero")).toContainText("参加活动");
+  await expect(page.getByRole("region", { name: "当前大家的排序" })).toContainText("参加与排序状态");
+  await joinButton.click();
+  await expect(roster.getByText(user.username)).toBeVisible();
+  await expect(roster.getByText("未排序", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "添加候选项" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "保存我的排序" })).toBeVisible();
 });
 
 test("时间建议只提示，管理员仍可确认保存", async ({ page }) => {

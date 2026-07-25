@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { candidates } from "@/db/schema";
-import { assertNominationOpen, requireActivity } from "@/lib/activity-access";
+import { assertNominationOpen, requireActivity, requireParticipant } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { normalizeName } from "@/lib/domain/normalization";
 import { apiError, assertSameOrigin, parseJson } from "@/lib/http";
@@ -16,6 +16,7 @@ export async function POST(request: Request, context: Context) {
     const { id } = await context.params;
     const activity = await requireActivity(id);
     assertNominationOpen(activity);
+    await requireParticipant(id, user.id);
     const input = await parseJson(request, candidateSchema);
     const [candidate] = await getDb()
       .insert(candidates)

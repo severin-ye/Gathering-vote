@@ -15,6 +15,13 @@
       "when": 1784902519417,
       "tag": "0001_activity_date_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784982739028,
+      "tag": "0002_activity_participants",
+      "breakpoints": true
     }
   ]
 }

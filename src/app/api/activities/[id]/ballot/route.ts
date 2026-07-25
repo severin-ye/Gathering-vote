@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
 import { ballotItems, ballots, candidates } from "@/db/schema";
-import { requireActivity } from "@/lib/activity-access";
+import { requireActivity, requireParticipant } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { getActivityPhase } from "@/lib/domain/activity";
 import { validateRanking } from "@/lib/domain/voting";
@@ -20,6 +20,7 @@ export async function PUT(request: Request, context: Context) {
     if (getActivityPhase(activity.nominationEndsAt, activity.votingEndsAt) === "closed") {
       throw new HttpError(409, "排序投票已经结束");
     }
+    await requireParticipant(id, user.id);
     const input = await parseJson(request, ballotSchema);
     const activityCandidates = await getDb()
       .select({ id: candidates.id })

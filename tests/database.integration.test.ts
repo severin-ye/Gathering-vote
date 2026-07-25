@@ -27,6 +27,34 @@ beforeEach(async () => {
 });
 
 describe("PostgreSQL constraints and transactions", () => {
+  it("backfills existing ballot owners into the participant pool without changing ballots", async () => {
+    const legacyDb = new PGlite();
+    for (const file of ["0000_initial.sql", "0001_activity_date_idempotency.sql"]) {
+      const migration = await readFile(new URL(`../drizzle/${file}`, import.meta.url), "utf8");
+      await legacyDb.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    }
+    await legacyDb.exec(`
+      insert into users (id, username, username_key) values ('${USER_A}', '王狗蛋', '王狗蛋');
+      insert into activities (id, title, created_by_id) values ('${ACTIVITY}', '进行中的活动', '${USER_A}');
+      insert into candidates (activity_id, name, name_key, created_by_id) values ('${ACTIVITY}', '火锅', '火锅', '${USER_A}');
+      insert into ballots (activity_id, user_id) values ('${ACTIVITY}', '${USER_A}');
+      insert into ballot_items (ballot_id, candidate_id, position)
+        select ballots.id, candidates.id, 0 from ballots, candidates
+        where ballots.activity_id = '${ACTIVITY}' and candidates.activity_id = '${ACTIVITY}';
+    `);
+
+    const migration = await readFile(new URL("../drizzle/0002_activity_participants.sql", import.meta.url), "utf8");
+    await legacyDb.exec(migration.replaceAll("--> statement-breakpoint", ""));
+
+    const state = await legacyDb.query<{ participants: number; ballots: number; ballotItems: number }>(`
+      select
+        (select count(*)::int from activity_participants) participants,
+        (select count(*)::int from ballots) ballots,
+        (select count(*)::int from ballot_items) "ballotItems"
+    `);
+    expect(state.rows[0]).toEqual({ participants: 1, ballots: 1, ballotItems: 1 });
+  });
+
   it("allows exactly one atomic manager claim", async () => {
     const claim = (userId: string) =>
       db.query(
