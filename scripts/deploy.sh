@@ -25,7 +25,9 @@ if [[ -z "$DATABASE_URL" ]]; then
   exit 1
 fi
 export DATABASE_URL
-export NODE_ENV=development
+# 不手动设置 NODE_ENV：npm ci 用 --include=dev 保证 devDependencies
+# （drizzle-kit、构建依赖）安装；next build 会自行使用 production，
+# 手动设成 development 会导致 /404 预渲染报错。
 export CI=1
 
 echo "========================================"

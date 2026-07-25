@@ -67,8 +67,9 @@ jobs:
           DEPLOY_SHA: ${{ github.sha }}
         run: |
           set -Eeuo pipefail
-          # 把 deploy.sh 拷到临时位置再用 bash 执行：
-          # 1) 不依赖 git 的 exec 位；2) 避免脚本运行中被 git checkout 覆盖自身。
+          # 先在服务器上 fetch 并 checkout 到目标 commit，再执行该版本的 deploy.sh。
+          # 这样运行的是目标提交里的脚本（脚本更新立即生效），且脚本内部的
+          # checkout 变成无操作，不会在运行中被覆盖。用 bash 执行，不依赖 exec 位。
           ssh \
             -i ~/.ssh/id_ed25519 \
             -p "$SSH_PORT" \
@@ -76,6 +77,8 @@ jobs:
             -o StrictHostKeyChecking=yes \
             "$SSH_USER@$SSH_HOST" \
             "set -Eeuo pipefail; \
-             cp /srv/gathering-vote/app/scripts/deploy.sh /tmp/gv-deploy.sh; \
-             rc=0; DEPLOY_SHA='$DEPLOY_SHA' bash /tmp/gv-deploy.sh || rc=\$?; \
-             rm -f /tmp/gv-deploy.sh; exit \$rc"
+             cd /srv/gathering-vote/app; \
+             git fetch --prune origin main; \
+             git merge-base --is-ancestor '$DEPLOY_SHA' origin/main; \
+             git checkout -B main '$DEPLOY_SHA'; \
+             DEPLOY_SHA='$DEPLOY_SHA' bash scripts/deploy.sh"
