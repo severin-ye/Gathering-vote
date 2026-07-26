@@ -296,6 +296,264 @@ textarea { min-height: 90px; resize: vertical; }
   box-shadow: inset -2px 0 0 var(--stamp-dark);
   transition: width .38s ease;
 }
+.time-poll { position: relative; overflow: hidden; }
+.time-poll::after {
+  content: "刻";
+  position: absolute;
+  right: -18px;
+  top: -30px;
+  color: rgba(211,75,53,.045);
+  font: 900 118px/1 "STKaiti", "KaiTi", serif;
+  transform: rotate(9deg);
+  pointer-events: none;
+}
+.time-poll-heading {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.time-poll-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0 0;
+}
+.time-builder {
+  position: relative;
+  z-index: 1;
+  margin: 22px 0;
+  padding: 18px;
+  border: 1px dashed var(--stamp);
+  background: rgba(211,75,53,.045);
+}
+.period-picker,
+.time-kind-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+.time-kind-picker button,
+.period-picker button,
+.time-hour-grid button {
+  min-height: 44px;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: rgba(255,255,255,.32);
+  font: 900 1rem/1 "STKaiti", "KaiTi", serif;
+  cursor: pointer;
+}
+.time-kind-picker button.active,
+.period-picker button.active,
+.time-hour-grid button.active {
+  color: var(--paper);
+  border-color: var(--stamp-dark);
+  background: var(--stamp);
+  box-shadow: 3px 3px 0 rgba(169,49,36,.16);
+}
+.time-kind-picker button:focus-visible,
+.period-picker button:focus-visible,
+.time-hour-grid button:focus-visible,
+.time-choice input:focus-visible + span {
+  outline: 3px solid #1673ff;
+  outline-offset: 2px;
+}
+.time-hour-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+.time-minute-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 16px;
+}
+.time-minute-row input { margin-top: 7px; }
+.time-preview {
+  min-width: 86px;
+  padding: 8px 11px;
+  text-align: center;
+  border: 2px solid var(--stamp);
+  color: var(--stamp-dark);
+  transform: rotate(-1deg);
+}
+.time-preview small,
+.time-preview strong { display: block; }
+.time-preview strong { margin-top: 3px; font-size: 1.2rem; }
+.time-choice-groups {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 18px;
+  margin-top: 22px;
+}
+.time-choice-group {
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+.time-choice-group > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-family: "STKaiti", "KaiTi", serif;
+  font-size: 1.05rem;
+}
+.time-choice-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.time-choice { position: relative; cursor: pointer; }
+.time-choice input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.time-choice span {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ink);
+  background: rgba(255,255,255,.28);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.time-choice.selected span {
+  color: var(--paper);
+  border-color: var(--stamp-dark);
+  background: var(--stamp);
+  box-shadow: 3px 3px 0 rgba(169,49,36,.14);
+  transform: rotate(-.7deg);
+}
+.time-choice input:disabled + span { cursor: default; opacity: .82; }
+.time-vote-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+}
+.vote-timeline {
+  position: relative;
+  overflow: hidden;
+}
+.vote-timeline::after {
+  content: "时";
+  position: absolute;
+  right: -8px;
+  bottom: -34px;
+  color: rgba(211,75,53,.05);
+  font: 900 116px/1 "STKaiti", "KaiTi", serif;
+  transform: rotate(7deg);
+  pointer-events: none;
+}
+.vote-timeline-heading {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+.vote-timeline-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0 0;
+}
+.time-curve {
+  position: relative;
+  z-index: 1;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+.time-curve-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.time-curve-title strong {
+  font: 900 1.1rem/1 "STKaiti", "KaiTi", serif;
+}
+.time-curve-title small { color: var(--muted); }
+.time-curve-scroll {
+  margin-top: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.time-curve-svg {
+  width: 100%;
+  min-width: 520px;
+  display: block;
+  overflow: visible;
+}
+.time-curve-axis { stroke: var(--ink); stroke-width: 1.5; }
+.time-curve-guide { stroke: var(--line); stroke-width: 1; stroke-dasharray: 5 6; }
+.time-curve-guide-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.time-curve-path {
+  fill: none;
+  stroke: var(--stamp);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(3px 3px 0 rgba(169,49,36,.1));
+}
+.time-curve-path.departure { stroke: var(--ink); }
+.time-curve-point { cursor: pointer; outline: none; }
+.time-curve-point circle {
+  fill: var(--paper);
+  stroke: var(--stamp);
+  stroke-width: 4;
+  transition: r .18s ease, fill .18s ease;
+}
+.time-curve-point.departure circle { stroke: var(--ink); }
+.time-curve-point:hover circle,
+.time-curve-point:focus circle {
+  r: 10px;
+  fill: var(--stamp);
+}
+.time-curve-point.departure:hover circle,
+.time-curve-point.departure:focus circle { fill: var(--ink); }
+.time-curve-tooltip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .16s ease;
+}
+.time-curve-point:hover .time-curve-tooltip,
+.time-curve-point:focus .time-curve-tooltip { opacity: 1; }
+.time-curve-tooltip rect {
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 1;
+}
+.time-curve-tooltip text {
+  fill: var(--paper);
+  font-size: 10px;
+  text-anchor: middle;
+  font-weight: 800;
+}
+.time-curve-time {
+  fill: var(--ink);
+  font-size: 11px;
+  text-anchor: middle;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
 .fade-up { animation: fade-up .5s both; animation-delay: calc(var(--i, 0) * 70ms); }
 @keyframes fade-up { from { opacity: 0; transform: translateY(14px); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
@@ -313,4 +571,10 @@ textarea { min-height: 90px; resize: vertical; }
   }
   .sortable .sort-controls { grid-column: 2; grid-row: 2; }
   .sortable .candidate-actions { grid-column: 3; grid-row: 2; justify-self: end; }
+  .time-poll-heading { display: block; }
+  .time-poll-heading .button { margin-top: 14px; }
+  .time-minute-row { grid-template-columns: 1fr; }
+  .time-preview { justify-self: start; }
+  .vote-timeline-heading { display: block; }
+  .time-curve-svg { min-width: 500px; }
 }

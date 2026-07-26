@@ -69,6 +69,28 @@ describe("PostgreSQL constraints and transactions", () => {
     ).rejects.toThrow();
   });
 
+  it("stores unique proposed times and multiple time choices per participant", async () => {
+    await db.exec(`
+      insert into activity_participants (activity_id, user_id) values ('${ACTIVITY}', '${USER_A}');
+      insert into activity_time_options (id, activity_id, kind, hour, minute, created_by_id) values
+        ('20000000-0000-4000-8000-000000000001', '${ACTIVITY}', 'arrival', 9, 0, '${USER_A}'),
+        ('20000000-0000-4000-8000-000000000002', '${ACTIVITY}', 'departure', 9, 0, '${USER_A}');
+      insert into activity_time_votes (activity_id, option_id, user_id) values
+        ('${ACTIVITY}', '20000000-0000-4000-8000-000000000001', '${USER_A}'),
+        ('${ACTIVITY}', '20000000-0000-4000-8000-000000000002', '${USER_A}');
+    `);
+    const votes = await db.query<{ count: number }>(
+      `select count(*)::int count from activity_time_votes where user_id = '${USER_A}'`
+    );
+    expect(votes.rows[0]?.count).toBe(2);
+    await expect(
+      db.exec(`insert into activity_time_options (activity_id, kind, hour, minute, created_by_id) values ('${ACTIVITY}', 'arrival', 9, 0, '${USER_A}')`)
+    ).rejects.toThrow();
+    await expect(
+      db.exec(`insert into activity_time_votes (activity_id, option_id, user_id) values ('${ACTIVITY}', '20000000-0000-4000-8000-000000000001', '${USER_A}')`)
+    ).rejects.toThrow();
+  });
+
   it("allows exactly one atomic manager claim", async () => {
     const claim = (userId: string) =>
       db.query(

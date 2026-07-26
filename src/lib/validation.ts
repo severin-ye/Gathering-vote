@@ -82,6 +82,22 @@ export const ballotSchema = z
     path: ["candidateIds"]
   });
 
+export const timeOptionSchema = z.object({
+  kind: z.enum(["arrival", "departure"], { message: "时间类型无效" }),
+  hour: z.coerce.number().int().min(0, "小时无效").max(23, "小时无效"),
+  minute: z.preprocess(
+    (value) => value === "" || value === undefined || value === null ? 0 : Number(value),
+    z.number().int().min(0, "分钟无效").max(59, "分钟无效")
+  )
+});
+
+export const timeVoteSchema = z
+  .object({ optionIds: z.array(z.uuid()).max(48, "时间选项过多") })
+  .refine(({ optionIds }) => new Set(optionIds).size === optionIds.length, {
+    message: "时间选择中不能出现重复项",
+    path: ["optionIds"]
+  });
+
 export const deleteActivitySchema = z.object({
   confirmation: z.literal("删除这个活动")
 });

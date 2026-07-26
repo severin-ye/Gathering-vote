@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getActivityPhase, getDeadlineWarnings } from "@/lib/domain/activity";
 import { calculateBordaResults, mergeRankingOrder, validateRanking } from "@/lib/domain/voting";
 import { normalizeName } from "@/lib/domain/normalization";
+import { buildTimeCurvePoints } from "@/lib/domain/vote-timeline";
 
 describe("name normalization", () => {
   it("trims, collapses whitespace, and compares case-insensitively", () => {
@@ -21,6 +22,28 @@ describe("activity phases", () => {
     const votingEnd = new Date("2026-07-25T12:00:00.000Z");
     expect(getActivityPhase(nominationEnd, votingEnd, now)).toBe("voting");
     expect(getActivityPhase(nominationEnd, votingEnd, votingEnd)).toBe("closed");
+  });
+});
+
+describe("arrival and departure time curves", () => {
+  const results = [
+    { optionId: "arrival-late", kind: "arrival" as const, hour: 20, minute: 0, votes: 2 },
+    { optionId: "arrival-early", kind: "arrival" as const, hour: 10, minute: 30, votes: 1 },
+    { optionId: "departure", kind: "departure" as const, hour: 22, minute: 0, votes: 3 },
+    { optionId: "empty", kind: "arrival" as const, hour: 12, minute: 0, votes: 0 }
+  ];
+
+  it("builds a chronological arrival curve with participant percentages", () => {
+    expect(buildTimeCurvePoints(results, "arrival", 4)).toEqual([
+      { optionId: "arrival-early", kind: "arrival", hour: 10, minute: 30, label: "10:30", votes: 1, percentage: 25 },
+      { optionId: "arrival-late", kind: "arrival", hour: 20, minute: 0, label: "20:00", votes: 2, percentage: 50 }
+    ]);
+  });
+
+  it("keeps departure choices on a separate curve", () => {
+    expect(buildTimeCurvePoints(results, "departure", 4)).toEqual([
+      { optionId: "departure", kind: "departure", hour: 22, minute: 0, label: "22:00", votes: 3, percentage: 75 }
+    ]);
   });
 });
 

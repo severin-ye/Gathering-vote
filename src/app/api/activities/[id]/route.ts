@@ -2,7 +2,17 @@ import { and, asc, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { NextResponse } from "next/server";
 import { getDb } from "@/db";
-import { activities, activityParticipants, ballotItems, ballots, candidates, userNotes, users } from "@/db/schema";
+import {
+  activities,
+  activityParticipants,
+  activityTimeOptions,
+  activityTimeVotes,
+  ballotItems,
+  ballots,
+  candidates,
+  userNotes,
+  users
+} from "@/db/schema";
 import { requireActivity } from "@/lib/activity-access";
 import { requireUser } from "@/lib/auth";
 import { getActivityPhase } from "@/lib/domain/activity";
@@ -51,7 +61,10 @@ export async function GET(_request: Request, context: Context) {
       .orderBy(asc(candidates.createdAt));
 
     const ownBallotRows = await getDb()
-      .select({ candidateId: ballotItems.candidateId, userId: ballots.userId })
+      .select({
+        candidateId: ballotItems.candidateId,
+        userId: ballots.userId
+      })
       .from(ballots)
       .innerJoin(ballotItems, eq(ballots.id, ballotItems.ballotId))
       .where(eq(ballots.activityId, id))
@@ -92,6 +105,29 @@ export async function GET(_request: Request, context: Context) {
       })
       .from(userNotes)
       .where(eq(userNotes.ownerUserId, user.id));
+    const timeOptions = await getDb()
+      .select({
+        id: activityTimeOptions.id,
+        kind: activityTimeOptions.kind,
+        hour: activityTimeOptions.hour,
+        minute: activityTimeOptions.minute,
+        createdById: activityTimeOptions.createdById,
+        createdAt: activityTimeOptions.createdAt
+      })
+      .from(activityTimeOptions)
+      .where(eq(activityTimeOptions.activityId, id))
+      .orderBy(asc(activityTimeOptions.hour), asc(activityTimeOptions.minute));
+    const timeVoteRows = await getDb()
+      .select({
+        optionId: activityTimeVotes.optionId,
+        userId: activityTimeVotes.userId
+      })
+      .from(activityTimeVotes)
+      .where(eq(activityTimeVotes.activityId, id));
+    const timeVoteCounts = new Map<string, number>();
+    for (const vote of timeVoteRows) {
+      timeVoteCounts.set(vote.optionId, (timeVoteCounts.get(vote.optionId) ?? 0) + 1);
+    }
     const notes = new Map(noteRows.map((row) => [row.targetUserId, row.note]));
     const participants = participantRows.map((participant) => ({
       ...participant,
@@ -117,6 +153,17 @@ export async function GET(_request: Request, context: Context) {
       })),
       ownBallot,
       results,
+      timeOptions,
+      ownTimeOptionIds: timeVoteRows
+        .filter((vote) => vote.userId === user.id)
+        .map((vote) => vote.optionId),
+      timeResults: timeOptions.map((option) => ({
+        optionId: option.id,
+        kind: option.kind as "arrival" | "departure",
+        hour: option.hour,
+        minute: option.minute,
+        votes: timeVoteCounts.get(option.id) ?? 0
+      })),
       voterCount,
       participants,
       isParticipant: participants.some((participant) => participant.userId === user.id)

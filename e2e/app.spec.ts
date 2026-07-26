@@ -181,7 +181,8 @@ test("时间建议只提示，管理员仍可确认保存", async ({ page }) => 
         managerUserId: user.id, managerUsername: user.username, nominationEndsAt: null,
         votingEndsAt: null, phase: "setup", updatedAt: "2026-07-24T10:00:00Z"
       },
-      candidates: [], ownBallot: [], results: null, voterCount: 0
+      candidates: [], ownBallot: [], results: null, voteTimes: [], voterCount: 0,
+      participants: [], isParticipant: true
     }
   }));
   await page.route(`**/api/activities/${activityId}/deadlines`, async (route) => {
@@ -255,6 +256,56 @@ test("添加候选成功后安全清空表单，不触发 reset 空引用", asyn
   await expect(page.getByRole("button", { name: "拖动 看电影" })).toBeVisible();
 });
 
+test("参加者可以添加活动时间并保存多选时间票", async ({ page }) => {
+  const optionId = "20000000-0000-4000-8000-000000000001";
+  let timeOptions: Array<Record<string, unknown>> = [];
+  let optionBody: Record<string, unknown> | null = null;
+  let voteBody: Record<string, unknown> | null = null;
+  await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
+  await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
+    json: {
+      activity: {
+        id: activityId, title: "周六吃什么", description: "", eventDate: "2026-08-06",
+        managerUserId: user.id, managerUsername: user.username,
+        nominationEndsAt: null, votingEndsAt: null, phase: "setup",
+        updatedAt: "2026-07-24T10:00:00Z"
+      },
+      candidates: [], ownBallot: [], results: null, voterCount: 0,
+      participants: [{ userId: user.id, username: user.username, hasBallot: false }],
+      isParticipant: true,
+      timeOptions,
+      ownTimeOptionIds: voteBody ? [optionId] : [],
+      timeResults: timeOptions.map((option) => ({ ...option, optionId: option.id, votes: voteBody ? 1 : 0 }))
+    }
+  }));
+  await page.route(`**/api/activities/${activityId}/time-options`, async (route) => {
+    optionBody = await route.request().postDataJSON();
+    timeOptions = [{
+      id: optionId, kind: "arrival", hour: 9, minute: 30, createdById: user.id,
+      createdAt: "2026-07-24T10:00:00Z"
+    }];
+    await route.fulfill({ status: 201, json: { option: timeOptions[0] } });
+  });
+  await page.route(`**/api/activities/${activityId}/time-vote`, async (route) => {
+    voteBody = await route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto(`/activities/${activityId}`);
+  await page.getByRole("button", { name: "添加新的时间" }).click();
+  await page.getByRole("button", { name: "进场时间" }).click();
+  await page.getByRole("button", { name: "上午" }).click();
+  await expect(page.locator(".time-hour-grid button")).toHaveCount(12);
+  await page.getByRole("button", { name: "9点" }).click();
+  await page.getByLabel("分钟（可不选）").fill("30");
+  await page.getByRole("button", { name: "保存这个时间" }).click();
+  expect(optionBody).toEqual({ kind: "arrival", hour: 9, minute: 30 });
+  await page.getByLabel("进场 09:30").check();
+  await page.getByRole("button", { name: "保存我的时间选择" }).click();
+  expect(voteBody).toEqual({ optionIds: [optionId] });
+  await expect(page.getByText("已保存时间选择 ✓")).toBeVisible();
+});
+
 test("截止后的第一名显示皇冠并重点加粗", async ({ page }) => {
   await page.route("**/api/auth/me", (route) => route.fulfill({ json: { user } }));
   await page.route(`**/api/activities/${activityId}`, (route) => route.fulfill({
@@ -277,7 +328,22 @@ test("截止后的第一名显示皇冠并重点加粗", async ({ page }) => {
         { candidateId: candidates[0].id, score: 2, rankCounts: [2, 0] },
         { candidateId: candidates[1].id, score: 0, rankCounts: [0, 2] }
       ],
-      voterCount: 2
+      timeOptions: [
+        { id: "20000000-0000-4000-8000-000000000001", kind: "arrival", hour: 10, minute: 30, createdById: user.id },
+        { id: "20000000-0000-4000-8000-000000000002", kind: "departure", hour: 20, minute: 0, createdById: user.id }
+      ],
+      ownTimeOptionIds: [],
+      timeResults: [
+        { optionId: "20000000-0000-4000-8000-000000000001", kind: "arrival", hour: 10, minute: 30, votes: 2 },
+        { optionId: "20000000-0000-4000-8000-000000000002", kind: "departure", hour: 20, minute: 0, votes: 3 }
+      ],
+      participants: [
+        { userId: user.id, username: user.username, hasBallot: true },
+        { userId: "00000000-0000-4000-8000-000000000002", username: "朋友甲", hasBallot: true },
+        { userId: "00000000-0000-4000-8000-000000000003", username: "朋友乙", hasBallot: true },
+        { userId: "00000000-0000-4000-8000-000000000004", username: "朋友丙", hasBallot: false }
+      ],
+      voterCount: 3
     }
   }));
 
@@ -286,6 +352,10 @@ test("截止后的第一名显示皇冠并重点加粗", async ({ page }) => {
   await expect(winner).toContainText("火锅");
   await expect(winner.getByLabel("冠军")).toBeVisible();
   await expect(winner.locator(".winner-name")).toHaveCSS("font-weight", "900");
+  const arrivalCurve = page.getByRole("region", { name: "进场时间结果" });
+  const departureCurve = page.getByRole("region", { name: "离场时间结果" });
+  await expect(arrivalCurve.getByLabel("10:30，2人，50%")).toBeVisible();
+  await expect(departureCurve.getByLabel("20:00，3人，75%")).toBeVisible();
 });
 
 test("账号管理可以修改用户名并为无密码用户设置密码", async ({ page }) => {
@@ -361,7 +431,8 @@ test("只有活动管理员能确认删除当前活动", async ({ page }) => {
           managerUserId: user.id, managerUsername: user.username, nominationEndsAt: null,
           votingEndsAt: null, phase: "setup", updatedAt: "2026-07-24T10:00:00Z"
         },
-        candidates: [], ownBallot: [], results: null, voterCount: 0
+        candidates: [], ownBallot: [], results: null, voteTimes: [], voterCount: 0,
+        participants: [], isParticipant: true
       }
     });
   });
@@ -371,8 +442,10 @@ test("只有活动管理员能确认删除当前活动", async ({ page }) => {
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("只删除这一场活动");
   await dialog.getByLabel("输入“删除这个活动”").fill("删除这个活动");
-  await dialog.getByRole("button", { name: "确认删除" }).click();
-  await expect(page).toHaveURL("/");
+  await Promise.all([
+    page.waitForURL("**/"),
+    dialog.getByRole("button", { name: "确认删除" }).click()
+  ]);
   expect(deleted).toBe(true);
 });
 
@@ -385,7 +458,8 @@ test("非管理员看不到删除活动入口", async ({ page }) => {
         managerUserId: "00000000-0000-4000-8000-000000000099", managerUsername: "朋友甲",
         nominationEndsAt: null, votingEndsAt: null, phase: "setup", updatedAt: "2026-07-24T10:00:00Z"
       },
-      candidates: [], ownBallot: [], results: null, voterCount: 0
+      candidates: [], ownBallot: [], results: null, voteTimes: [], voterCount: 0,
+      participants: [], isParticipant: true
     }
   }));
 

@@ -1,12 +1,18 @@
 "use client";
 
-import { ArrowLeft, CalendarClock, Check, Crown, Pencil, Plus, TicketCheck, Trash2, UserMinus, UsersRound } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, Crown, LineChart, Pencil, Plus, TicketCheck, Trash2, UserMinus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { RankingBoard } from "@/components/ranking-board";
 import { api, type CurrentUser } from "@/lib/client-api";
 import { getDeadlineWarnings, phaseLabels, type ActivityPhase, type DeadlineWarning } from "@/lib/domain/activity";
+import {
+  buildTimeCurvePoints,
+  formatTimeOption,
+  type TimeOptionKind,
+  type TimeVoteResult,
+} from "@/lib/domain/vote-timeline";
 
 interface Candidate {
   id: string;
@@ -16,6 +22,14 @@ interface Candidate {
   createdByUsername: string;
   createdByDisplayName?: string;
   createdAt: string;
+}
+interface TimeOption {
+  id: string;
+  kind: TimeOptionKind;
+  hour: number;
+  minute: number;
+  createdById: string;
+  createdAt?: string;
 }
 interface ActivityDetail {
   activity: {
@@ -34,6 +48,9 @@ interface ActivityDetail {
   candidates: Candidate[];
   ownBallot: string[];
   results: { candidateId: string; score: number; rankCounts: number[] }[] | null;
+  timeOptions: TimeOption[];
+  ownTimeOptionIds: string[];
+  timeResults: TimeVoteResult[];
   voterCount: number;
   isParticipant: boolean;
   participants: { userId: string; username: string; displayName?: string; note?: string; hasBallot: boolean }[];
@@ -152,6 +169,16 @@ export default function ActivityPage() {
             )}
           </section>
 
+          <TimePreferencePanel
+            options={data.timeOptions ?? []}
+            ownOptionIds={data.ownTimeOptionIds ?? []}
+            isParticipant={isParticipant}
+            canAdd={canNominate}
+            canVote={activity.phase !== "closed"}
+            onAdd={(body) => mutate(`/api/activities/${id}/time-options`, "POST", body)}
+            onVote={(optionIds) => mutate(`/api/activities/${id}/time-vote`, "PUT", { optionIds })}
+          />
+
           {canNominate && isParticipant && (
             <form className="paper panel form-grid" onSubmit={saveCandidate}>
               <h2>{editing ? `修改“${editing.name}”` : "添加候选项"}</h2>
@@ -170,6 +197,7 @@ export default function ActivityPage() {
             {isManager && <DeadlineForm activity={activity} onSave={async (body) => { await mutate(`/api/activities/${id}/deadlines`, "PUT", body); }} />}
             {!activity.managerUserId && <div className="notice">申领管理员后才能设置两个截止时间。</div>}
           </section>
+          {activity.phase === "closed" && <TimeVoteTimeline results={data.timeResults ?? []} participantCount={data.participants?.length ?? 0} />}
           {activity.phase !== "closed" && <CurrentResults data={data} candidates={candidates} currentUserId={user.id} onEditNote={setNoting} />}
         </aside>
       </div>
@@ -270,6 +298,203 @@ function ParticipantChip({
         </button>
       )}
     </span>
+  );
+}
+
+function TimePreferencePanel({
+  options,
+  ownOptionIds,
+  isParticipant,
+  canAdd,
+  canVote,
+  onAdd,
+  onVote
+}: {
+  options: TimeOption[];
+  ownOptionIds: string[];
+  isParticipant: boolean;
+  canAdd: boolean;
+  canVote: boolean;
+  onAdd: (body: { kind: TimeOptionKind; hour: number; minute: number }) => Promise<boolean>;
+  onVote: (optionIds: string[]) => Promise<boolean>;
+}) {
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [kind, setKind] = useState<TimeOptionKind | null>(null);
+  const [period, setPeriod] = useState<"am" | "pm" | null>(null);
+  const [hour, setHour] = useState<number | null>(null);
+  const [minute, setMinute] = useState("");
+  const [selected, setSelected] = useState(() => new Set(ownOptionIds));
+  const [saved, setSaved] = useState(() => new Set(ownOptionIds));
+
+  useEffect(() => {
+    setSelected(new Set(ownOptionIds));
+    setSaved(new Set(ownOptionIds));
+  }, [ownOptionIds]);
+
+  const hourFaces = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const isSaved = sameIds(selected, saved);
+
+  function choosePeriod(nextPeriod: "am" | "pm") {
+    setPeriod(nextPeriod);
+    setHour(null);
+  }
+
+  function chooseHour(face: number) {
+    if (!period) return;
+    setHour(
+      period === "am"
+        ? face === 12 ? 0 : face
+        : face === 12 ? 12 : face + 12
+    );
+  }
+
+  async function saveNewTime() {
+    if (!kind || hour === null) return;
+    const savedOption = await onAdd({
+      kind,
+      hour,
+      minute: minute === "" ? 0 : Number(minute)
+    });
+    if (savedOption) {
+      setShowBuilder(false);
+      setKind(null);
+      setPeriod(null);
+      setHour(null);
+      setMinute("");
+    }
+  }
+
+  function toggleOption(optionId: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(optionId)) next.delete(optionId);
+      else next.add(optionId);
+      return next;
+    });
+  }
+
+  async function saveVote() {
+    const optionIds = [...selected];
+    if (await onVote(optionIds)) setSaved(new Set(optionIds));
+  }
+
+  return (
+    <section className="paper panel time-poll fade-up" style={{ "--i": 2 } as React.CSSProperties}>
+      <div className="time-poll-heading">
+        <div>
+          <span className="eyebrow">Second ballot · 可多选</span>
+          <h2><CalendarClock size={22} /> 活动时间投票</h2>
+        </div>
+        {isParticipant && canAdd && (
+          <button type="button" className="button small stamp" onClick={() => setShowBuilder((value) => !value)}>
+            <Plus size={16} /> 添加新的时间
+          </button>
+        )}
+      </div>
+
+      {showBuilder && (
+        <div className="time-builder">
+          <strong>先选时间用途</strong>
+          <div className="time-kind-picker">
+            <button type="button" className={kind === "arrival" ? "active" : ""} aria-pressed={kind === "arrival"} onClick={() => { setKind("arrival"); setPeriod(null); setHour(null); }}>进场时间</button>
+            <button type="button" className={kind === "departure" ? "active" : ""} aria-pressed={kind === "departure"} onClick={() => { setKind("departure"); setPeriod(null); setHour(null); }}>离场时间</button>
+          </div>
+          {kind && (
+            <>
+              <strong>再选上下午</strong>
+              <div className="period-picker">
+                <button type="button" className={period === "am" ? "active" : ""} aria-pressed={period === "am"} onClick={() => choosePeriod("am")}>上午</button>
+                <button type="button" className={period === "pm" ? "active" : ""} aria-pressed={period === "pm"} onClick={() => choosePeriod("pm")}>下午</button>
+              </div>
+            </>
+          )}
+          {kind && period && (
+            <>
+              <div className="time-hour-grid" aria-label={`${kind === "arrival" ? "进场" : "离场"}${period === "am" ? "上午" : "下午"}小时`}>
+                {hourFaces.map((face) => {
+                  const absoluteHour = period === "am"
+                    ? face === 12 ? 0 : face
+                    : face === 12 ? 12 : face + 12;
+                  return (
+                    <button
+                      type="button"
+                      key={face}
+                      className={hour === absoluteHour ? "active" : ""}
+                      aria-pressed={hour === absoluteHour}
+                      onClick={() => chooseHour(face)}
+                    >
+                      {face}点
+                    </button>
+                  );
+                })}
+              </div>
+              {hour !== null && (
+                <div className="time-minute-row">
+                  <label>
+                    分钟 <small className="muted">（可不选，默认整点）</small>
+                    <input
+                      aria-label="分钟（可不选）"
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={59}
+                      value={minute}
+                      placeholder="00"
+                      onChange={(event) => setMinute(event.target.value)}
+                    />
+                  </label>
+                  <div className="time-preview">
+                    <small>{kind === "arrival" ? "进场" : "离场"}</small>
+                    <strong>{formatTimeOption(hour, minute === "" ? 0 : Number(minute))}</strong>
+                  </div>
+                </div>
+              )}
+              <div className="toolbar">
+                <button type="button" className="button primary" disabled={!kind || hour === null} onClick={saveNewTime}>保存这个时间</button>
+                <button type="button" className="button" onClick={() => setShowBuilder(false)}>取消</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {!options.length && <div className="empty">还没有时间选项，先添加一个大家方便的时刻。</div>}
+      {!!options.length && (
+        <div className="time-choice-groups">
+          {(["arrival", "departure"] as const).map((optionKind) => (
+            <div className="time-choice-group" key={optionKind}>
+              <strong>{optionKind === "arrival" ? "进场时间" : "离场时间"}</strong>
+              <div className="time-choice-grid">
+                {options.filter((option) => option.kind === optionKind).map((option) => {
+                  const label = formatTimeOption(option.hour, option.minute);
+                  return (
+                    <label className={`time-choice${selected.has(option.id) ? " selected" : ""}`} key={option.id}>
+                      <input
+                        type="checkbox"
+                        aria-label={`${optionKind === "arrival" ? "进场" : "离场"} ${label}`}
+                        checked={selected.has(option.id)}
+                        disabled={!isParticipant || !canVote}
+                        onChange={() => toggleOption(option.id)}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {!options.some((option) => option.kind === optionKind) && <small className="muted">还没有选项</small>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isParticipant && <div className="notice">参加活动后，才能添加时间并参与多选。</div>}
+      {isParticipant && canVote && !!options.length && (
+        <div className="time-vote-actions">
+          <button type="button" className="button primary" onClick={saveVote}>保存我的时间选择</button>
+          {isSaved && <span className="success" role="status">已保存时间选择 ✓</span>}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -405,6 +630,102 @@ function DeadlineForm({ activity, onSave }: { activity: ActivityDetail["activity
       )}
     </>
   );
+}
+
+function TimeVoteTimeline({
+  results,
+  participantCount
+}: {
+  results: TimeVoteResult[];
+  participantCount: number;
+}) {
+  return (
+    <section
+      className="paper panel vote-timeline fade-up"
+      style={{ "--i": 3 } as React.CSSProperties}
+    >
+      <div className="vote-timeline-heading">
+        <div>
+          <span className="eyebrow">Time ballot result</span>
+          <h2><LineChart size={22} /> 大家方便的时间</h2>
+        </div>
+      </div>
+      <p className="muted">曲线表示占全部参加者的比例。悬停或点按时间点查看详情。</p>
+      <TimeCurve kind="arrival" results={results} participantCount={participantCount} />
+      <TimeCurve kind="departure" results={results} participantCount={participantCount} />
+    </section>
+  );
+}
+
+function TimeCurve({
+  kind,
+  results,
+  participantCount
+}: {
+  kind: TimeOptionKind;
+  results: TimeVoteResult[];
+  participantCount: number;
+}) {
+  const points = buildTimeCurvePoints(results, kind, participantCount);
+  const title = kind === "arrival" ? "进场时间" : "离场时间";
+  const chartPoints = points.map((point, index) => ({
+    ...point,
+    x: points.length === 1 ? 320 : 48 + index * (544 / (points.length - 1)),
+    y: 165 - point.percentage
+  }));
+  const path = smoothCurvePath(chartPoints);
+
+  return (
+    <div className="time-curve" role="region" aria-label={`${title}结果`}>
+      <div className="time-curve-title">
+        <strong>{title}</strong>
+        <small>{participantCount} 人参加</small>
+      </div>
+      {!points.length ? (
+        <div className="empty">还没有人选择{title}。</div>
+      ) : (
+        <div className="time-curve-scroll">
+          <svg className="time-curve-svg" viewBox="0 0 640 220" role="img" aria-label={`${title}选择比例曲线`}>
+            <line className="time-curve-axis" x1="40" y1="165" x2="610" y2="165" />
+            <line className="time-curve-guide" x1="40" y1="115" x2="610" y2="115" />
+            <text className="time-curve-guide-label" x="8" y="119">50%</text>
+            <path className={`time-curve-path ${kind}`} d={path} />
+            {chartPoints.map((point) => (
+              <g
+                className={`time-curve-point ${kind}`}
+                key={point.optionId}
+                transform={`translate(${point.x} ${point.y})`}
+                role="img"
+                tabIndex={0}
+                aria-label={`${point.label}，${point.votes}人，${point.percentage}%`}
+              >
+                <circle r="7" />
+                <g className="time-curve-tooltip" aria-hidden="true">
+                  <rect x="-54" y="-50" width="108" height="36" rx="2" />
+                  <text x="0" y="-35">{point.label} · {point.percentage}%</text>
+                  <text x="0" y="-22">{point.votes} 人选择</text>
+                </g>
+                <text className="time-curve-time" x="0" y={190 - point.y}>{point.label}</text>
+              </g>
+            ))}
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function sameIds(left: Set<string>, right: Set<string>) {
+  return left.size === right.size && [...left].every((value) => right.has(value));
+}
+
+function smoothCurvePath(points: Array<{ x: number; y: number }>) {
+  if (!points.length) return "";
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    const controlX = (previous.x + point.x) / 2;
+    return `${path} C ${controlX} ${previous.y}, ${controlX} ${point.y}, ${point.x} ${point.y}`;
+  }, `M ${points[0].x} ${points[0].y}`);
 }
 
 function Results({

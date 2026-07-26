@@ -1,5 +1,7 @@
 import {
+  check,
   date,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -117,6 +119,59 @@ export const activityParticipants = pgTable(
   (table) => [
     primaryKey({ columns: [table.activityId, table.userId] }),
     index("activity_participants_activity_idx").on(table.activityId)
+  ]
+);
+
+export const activityTimeOptions = pgTable(
+  "activity_time_options",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("arrival"),
+    hour: integer("hour").notNull(),
+    minute: integer("minute").notNull().default(0),
+    createdById: uuid("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("activity_time_options_time_unique").on(
+      table.activityId,
+      table.kind,
+      table.hour,
+      table.minute
+    ),
+    uniqueIndex("activity_time_options_activity_id_id_unique").on(table.activityId, table.id),
+    index("activity_time_options_activity_idx").on(table.activityId),
+    check("activity_time_options_hour_check", sql`${table.hour} between 0 and 23`),
+    check("activity_time_options_minute_check", sql`${table.minute} between 0 and 59`),
+    check("activity_time_options_kind_check", sql`${table.kind} in ('arrival', 'departure')`)
+  ]
+);
+
+export const activityTimeVotes = pgTable(
+  "activity_time_votes",
+  {
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    optionId: uuid("option_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.optionId, table.userId] }),
+    foreignKey({
+      columns: [table.activityId, table.optionId],
+      foreignColumns: [activityTimeOptions.activityId, activityTimeOptions.id],
+      name: "activity_time_votes_activity_option_fk"
+    }).onDelete("cascade"),
+    index("activity_time_votes_activity_user_idx").on(table.activityId, table.userId)
   ]
 );
 

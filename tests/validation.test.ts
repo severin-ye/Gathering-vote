@@ -8,6 +8,8 @@ import {
   deleteActivitySchema,
   passwordChangeSchema,
   registrationCredentialsSchema,
+  timeOptionSchema,
+  timeVoteSchema,
   userNoteSchema
 } from "@/lib/validation";
 import { formatActivityTitle } from "@/lib/domain/activity";
@@ -90,6 +92,16 @@ describe("request validation", () => {
 
   it("rejects duplicate ballot candidate ids", () => {
     expect(ballotSchema.safeParse({ candidateIds: ["a", "a"] }).success).toBe(false);
+  });
+
+  it("validates a proposed time and a multi-select time vote", () => {
+    expect(timeOptionSchema.parse({ kind: "arrival", hour: 9, minute: "" })).toEqual({ kind: "arrival", hour: 9, minute: 0 });
+    expect(timeOptionSchema.parse({ kind: "departure", hour: 20, minute: 35 })).toEqual({ kind: "departure", hour: 20, minute: 35 });
+    expect(timeOptionSchema.safeParse({ kind: "arrival", hour: 24, minute: 0 }).success).toBe(false);
+    expect(timeOptionSchema.safeParse({ kind: "meeting", hour: 9, minute: 0 }).success).toBe(false);
+    const optionId = "20000000-0000-4000-8000-000000000001";
+    expect(timeVoteSchema.safeParse({ optionIds: [optionId] }).success).toBe(true);
+    expect(timeVoteSchema.safeParse({ optionIds: [optionId, optionId] }).success).toBe(false);
   });
 
   it("requires the exact single-activity deletion confirmation", () => {
