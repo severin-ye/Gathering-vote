@@ -318,11 +318,7 @@ function TimePreferencePanel({
   onAdd: (body: { kind: TimeOptionKind; hour: number; minute: number }) => Promise<boolean>;
   onVote: (optionIds: string[]) => Promise<boolean>;
 }) {
-  const [showBuilder, setShowBuilder] = useState(false);
-  const [kind, setKind] = useState<TimeOptionKind | null>(null);
-  const [period, setPeriod] = useState<"am" | "pm" | null>(null);
-  const [hour, setHour] = useState<number | null>(null);
-  const [minute, setMinute] = useState("");
+  const [builderKind, setBuilderKind] = useState<TimeOptionKind | null>(null);
   const [selected, setSelected] = useState(() => new Set(ownOptionIds));
   const [saved, setSaved] = useState(() => new Set(ownOptionIds));
 
@@ -331,38 +327,7 @@ function TimePreferencePanel({
     setSaved(new Set(ownOptionIds));
   }, [ownOptionIds]);
 
-  const hourFaces = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   const isSaved = sameIds(selected, saved);
-
-  function choosePeriod(nextPeriod: "am" | "pm") {
-    setPeriod(nextPeriod);
-    setHour(null);
-  }
-
-  function chooseHour(face: number) {
-    if (!period) return;
-    setHour(
-      period === "am"
-        ? face === 12 ? 0 : face
-        : face === 12 ? 12 : face + 12
-    );
-  }
-
-  async function saveNewTime() {
-    if (!kind || hour === null) return;
-    const savedOption = await onAdd({
-      kind,
-      hour,
-      minute: minute === "" ? 0 : Number(minute)
-    });
-    if (savedOption) {
-      setShowBuilder(false);
-      setKind(null);
-      setPeriod(null);
-      setHour(null);
-      setMinute("");
-    }
-  }
 
   function toggleOption(optionId: string) {
     setSelected((current) => {
@@ -385,85 +350,34 @@ function TimePreferencePanel({
           <span className="eyebrow">Second ballot · 可多选</span>
           <h2><CalendarClock size={22} /> 活动时间投票</h2>
         </div>
-        {isParticipant && canAdd && (
-          <button type="button" className="button small stamp" onClick={() => setShowBuilder((value) => !value)}>
-            <Plus size={16} /> 添加新的时间
-          </button>
-        )}
       </div>
 
-      {showBuilder && (
-        <div className="time-builder">
-          <strong>先选时间用途</strong>
-          <div className="time-kind-picker">
-            <button type="button" className={kind === "arrival" ? "active" : ""} aria-pressed={kind === "arrival"} onClick={() => { setKind("arrival"); setPeriod(null); setHour(null); }}>进场时间</button>
-            <button type="button" className={kind === "departure" ? "active" : ""} aria-pressed={kind === "departure"} onClick={() => { setKind("departure"); setPeriod(null); setHour(null); }}>离场时间</button>
-          </div>
-          {kind && (
-            <>
-              <strong>再选上下午</strong>
-              <div className="period-picker">
-                <button type="button" className={period === "am" ? "active" : ""} aria-pressed={period === "am"} onClick={() => choosePeriod("am")}>上午</button>
-                <button type="button" className={period === "pm" ? "active" : ""} aria-pressed={period === "pm"} onClick={() => choosePeriod("pm")}>下午</button>
+      <div className="time-choice-groups">
+        {(["arrival", "departure"] as const).map((optionKind) => (
+          <div className="time-choice-group" key={optionKind}>
+              <div className="time-choice-group-heading">
+                <strong>{optionKind === "arrival" ? "进场时间" : "离场时间"}</strong>
+                {isParticipant && canAdd && (
+                  <button
+                    type="button"
+                    className="button small time-select-trigger"
+                    onClick={() => setBuilderKind((current) => current === optionKind ? null : optionKind)}
+                  >
+                    <Plus size={15} /> 选择{optionKind === "arrival" ? "进场" : "离场"}时间
+                  </button>
+                )}
               </div>
-            </>
-          )}
-          {kind && period && (
-            <>
-              <div className="time-hour-grid" aria-label={`${kind === "arrival" ? "进场" : "离场"}${period === "am" ? "上午" : "下午"}小时`}>
-                {hourFaces.map((face) => {
-                  const absoluteHour = period === "am"
-                    ? face === 12 ? 0 : face
-                    : face === 12 ? 12 : face + 12;
-                  return (
-                    <button
-                      type="button"
-                      key={face}
-                      className={hour === absoluteHour ? "active" : ""}
-                      aria-pressed={hour === absoluteHour}
-                      onClick={() => chooseHour(face)}
-                    >
-                      {face}点
-                    </button>
-                  );
-                })}
-              </div>
-              {hour !== null && (
-                <div className="time-minute-row">
-                  <label>
-                    分钟 <small className="muted">（可不选，默认整点）</small>
-                    <input
-                      aria-label="分钟（可不选）"
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      max={59}
-                      value={minute}
-                      placeholder="00"
-                      onChange={(event) => setMinute(event.target.value)}
-                    />
-                  </label>
-                  <div className="time-preview">
-                    <small>{kind === "arrival" ? "进场" : "离场"}</small>
-                    <strong>{formatTimeOption(hour, minute === "" ? 0 : Number(minute))}</strong>
-                  </div>
-                </div>
+              {builderKind === optionKind && (
+                <TimeOptionBuilder
+                  kind={optionKind}
+                  onCancel={() => setBuilderKind(null)}
+                  onSave={async (body) => {
+                    const didSave = await onAdd(body);
+                    if (didSave) setBuilderKind(null);
+                    return didSave;
+                  }}
+                />
               )}
-              <div className="toolbar">
-                <button type="button" className="button primary" disabled={!kind || hour === null} onClick={saveNewTime}>保存这个时间</button>
-                <button type="button" className="button" onClick={() => setShowBuilder(false)}>取消</button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {!options.length && <div className="empty">还没有时间选项，先添加一个大家方便的时刻。</div>}
-      {!!options.length && (
-        <div className="time-choice-groups">
-          {(["arrival", "departure"] as const).map((optionKind) => (
-            <div className="time-choice-group" key={optionKind}>
-              <strong>{optionKind === "arrival" ? "进场时间" : "离场时间"}</strong>
               <div className="time-choice-grid">
                 {options.filter((option) => option.kind === optionKind).map((option) => {
                   const label = formatTimeOption(option.hour, option.minute);
@@ -482,10 +396,9 @@ function TimePreferencePanel({
                 })}
               </div>
               {!options.some((option) => option.kind === optionKind) && <small className="muted">还没有选项</small>}
-            </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
 
       {!isParticipant && <div className="notice">参加活动后，才能添加时间并参与多选。</div>}
       {isParticipant && canVote && !!options.length && (
@@ -495,6 +408,101 @@ function TimePreferencePanel({
         </div>
       )}
     </section>
+  );
+}
+
+function TimeOptionBuilder({
+  kind,
+  onCancel,
+  onSave
+}: {
+  kind: TimeOptionKind;
+  onCancel: () => void;
+  onSave: (body: { kind: TimeOptionKind; hour: number; minute: number }) => Promise<boolean>;
+}) {
+  const [period, setPeriod] = useState<"am" | "pm" | null>(null);
+  const [hour, setHour] = useState<number | null>(null);
+  const [minute, setMinute] = useState("");
+  const hourFaces = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+  function choosePeriod(nextPeriod: "am" | "pm") {
+    setPeriod(nextPeriod);
+    setHour(null);
+  }
+
+  function chooseHour(face: number) {
+    if (!period) return;
+    setHour(
+      period === "am"
+        ? face === 12 ? 0 : face
+        : face === 12 ? 12 : face + 12
+    );
+  }
+
+  async function saveTime() {
+    if (hour === null) return;
+    await onSave({
+      kind,
+      hour,
+      minute: minute === "" ? 0 : Number(minute)
+    });
+  }
+
+  return (
+    <div className="time-builder">
+      <strong>选择{kind === "arrival" ? "进场" : "离场"}时间</strong>
+      <div className="period-picker">
+        <button type="button" className={period === "am" ? "active" : ""} aria-pressed={period === "am"} onClick={() => choosePeriod("am")}>上午</button>
+        <button type="button" className={period === "pm" ? "active" : ""} aria-pressed={period === "pm"} onClick={() => choosePeriod("pm")}>下午</button>
+      </div>
+      {period && (
+        <>
+          <div className="time-hour-grid" aria-label={`${kind === "arrival" ? "进场" : "离场"}${period === "am" ? "上午" : "下午"}小时`}>
+            {hourFaces.map((face) => {
+              const absoluteHour = period === "am"
+                ? face === 12 ? 0 : face
+                : face === 12 ? 12 : face + 12;
+              return (
+                <button
+                  type="button"
+                  key={face}
+                  className={hour === absoluteHour ? "active" : ""}
+                  aria-pressed={hour === absoluteHour}
+                  onClick={() => chooseHour(face)}
+                >
+                  {face}点
+                </button>
+              );
+            })}
+          </div>
+          {hour !== null && (
+            <div className="time-minute-row">
+              <label>
+                分钟 <small className="muted">（可不选，默认整点）</small>
+                <input
+                  aria-label="分钟（可不选）"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={59}
+                  value={minute}
+                  placeholder="00"
+                  onChange={(event) => setMinute(event.target.value)}
+                />
+              </label>
+              <div className="time-preview">
+                <small>{kind === "arrival" ? "进场" : "离场"}</small>
+                <strong>{formatTimeOption(hour, minute === "" ? 0 : Number(minute))}</strong>
+              </div>
+            </div>
+          )}
+          <div className="toolbar">
+            <button type="button" className="button primary" disabled={hour === null} onClick={saveTime}>保存这个时间</button>
+            <button type="button" className="button" onClick={onCancel}>取消</button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

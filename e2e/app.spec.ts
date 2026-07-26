@@ -292,8 +292,9 @@ test("参加者可以添加活动时间并保存多选时间票", async ({ page 
   });
 
   await page.goto(`/activities/${activityId}`);
-  await page.getByRole("button", { name: "添加新的时间" }).click();
-  await page.getByRole("button", { name: "进场时间" }).click();
+  await expect(page.getByRole("button", { name: "添加新的时间" })).toHaveCount(0);
+  await page.getByRole("button", { name: "选择进场时间" }).click();
+  await expect(page.getByRole("button", { name: "选择离场时间" })).toBeVisible();
   await page.getByRole("button", { name: "上午" }).click();
   await expect(page.locator(".time-hour-grid button")).toHaveCount(12);
   await page.getByRole("button", { name: "9点" }).click();
